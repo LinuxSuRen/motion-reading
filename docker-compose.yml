@@ -10,8 +10,12 @@ services:
     ports:
       - "8000:8000"
     devices:
-      - /dev/usb/hiddev0:/dev/video0
-      - /dev/usb/hiddev1:/dev/video1
+      - /dev/video0:/dev/video0
+      - /dev/video1:/dev/video1
+      - /dev/media0:/dev/media0
+    group_add:
+      - video
+    privileged: true
     environment:
       - CAMERA_ID=${CAMERA_ID:-0}
     restart: unless-stopped
