@@ -1,0 +1,17 @@
+services:
+  motion-reading:
+    build:
+      context: .
+      args:
+        - HTTP_PROXY=${HTTP_PROXY:-}
+        - HTTPS_PROXY=${HTTPS_PROXY:-}
+        - NO_PROXY=${NO_PROXY:-}
+    container_name: motion-reading
+    ports:
+      - "8000:8000"
+    devices:
+      - /dev/usb/hiddev0:/dev/video0
+      - /dev/usb/hiddev1:/dev/video1
+    environment:
+      - CAMERA_ID=${CAMERA_ID:-0}
+    restart: unless-stopped

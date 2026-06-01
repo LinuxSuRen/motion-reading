@@ -2,6 +2,7 @@ import asyncio
 import base64
 import json
 import logging
+import os
 import time
 from contextlib import asynccontextmanager
 
@@ -14,6 +15,11 @@ import uvicorn
 from pose_engine import PoseEngine
 from robot_arms.base import ArmVectors
 from robot_arms import get_robot, get_available_robots
+from robot_arms.controllers import (
+    ControllerState,
+    create_controller,
+    get_available_controllers,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -71,13 +77,40 @@ def _safe_json(obj):
     return obj
 
 
+def _init_controller(robot):
+    controller_type = os.getenv("ROBOT_CONTROLLER", "dummy")
+    logger.info(
+        "Initializing controller type=%s robot=%s (%s)",
+        controller_type, robot.robot_id, robot.name,
+    )
+    ctrl = create_controller(
+        controller_type=controller_type,
+        robot_id=robot.robot_id,
+        robot_name=robot.name,
+    )
+    connected = ctrl.connect()
+    if connected:
+        logger.info("Controller connected: %s", ctrl.status.to_dict())
+        ctrl.enabled = True
+    else:
+        logger.warning(
+            "Controller NOT connected (type=%s, robot=%s). "
+            "Joint data will NOT be sent to hardware.",
+            controller_type, robot.robot_id,
+        )
+    return ctrl
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    engine = PoseEngine()
+    engine = PoseEngine(camera_id=int(os.getenv("CAMERA_ID", "0")))
     app.state.engine = engine
-    app.state.robot = get_robot()
+    robot = get_robot()
+    app.state.robot = robot
+    app.state.controller = _init_controller(robot)
     engine.start()
     yield
+    app.state.controller.disconnect()
     engine.stop()
 
 
@@ -94,32 +127,106 @@ async def list_robots():
     return JSONResponse(get_available_robots())
 
 
+@app.get("/api/controllers")
+async def list_controllers():
+    return JSONResponse(get_available_controllers())
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     last_send = 0.0
 
     robot = websocket.app.state.robot
+    controller = websocket.app.state.controller
+
+    def _send_to_controller(robot_angles: dict | None):
+        if not robot_angles or not controller.enabled:
+            return
+        for side in ("left", "right"):
+            side_data = robot_angles.get(side)
+            if side_data and side_data.get("joints"):
+                controller.send_joints(side_data["joints"], side_data.get("gripper", 0))
 
     async def handle_incoming():
-        nonlocal robot
+        nonlocal robot, controller
         async for raw in websocket.iter_text():
             try:
                 msg = json.loads(raw)
-                if msg.get("action") == "set_robot":
+                action = msg.get("action", "")
+
+                if action == "set_robot":
                     robot_id = msg.get("robot", "")
                     robot = get_robot(robot_id)
+                    old_ctrl = controller
+                    controller = _init_controller(robot)
+                    websocket.app.state.robot = robot
+                    websocket.app.state.controller = controller
+                    old_ctrl.disconnect()
                     await websocket.send_text(json.dumps({
                         "type": "robot_changed",
                         "robot": {"id": robot.robot_id, "name": robot.name},
                     }))
-                elif msg.get("action") == "toggle_face":
+
+                elif action == "toggle_face":
                     enabled = msg.get("enabled", False)
                     websocket.app.state.engine.face_enabled = enabled
                     await websocket.send_text(json.dumps({
                         "type": "face_toggled",
                         "enabled": enabled,
                     }))
+
+                elif action == "control_enable":
+                    enabled = msg.get("enabled", False)
+                    controller.enabled = enabled
+                    if enabled and controller.status.state != ControllerState.CONNECTED:
+                        logger.info("Reconnecting controller (re-enable requested)")
+                        controller.connect()
+                        controller.enabled = True
+                    await websocket.send_text(json.dumps({
+                        "type": "control_status",
+                        "control": controller.status.to_dict(),
+                        "enabled": controller.enabled,
+                    }))
+
+                elif action == "control_reconnect":
+                    logger.info("Manual reconnect requested")
+                    controller.disconnect()
+                    connected = controller.connect()
+                    if connected:
+                        controller.enabled = True
+                    await websocket.send_text(json.dumps({
+                        "type": "control_status",
+                        "control": controller.status.to_dict(),
+                        "enabled": controller.enabled,
+                    }))
+
+                elif action == "control_configure":
+                    ctrl_type = msg.get("type", "dummy")
+                    host = msg.get("host", "127.0.0.1")
+                    port = int(msg.get("port", 30002))
+                    logger.info(
+                        "Reconfiguring controller: type=%s host=%s port=%d",
+                        ctrl_type, host, port,
+                    )
+                    controller.disconnect()
+                    controller = create_controller(
+                        controller_type=ctrl_type,
+                        robot_id=robot.robot_id,
+                        robot_name=robot.name,
+                        host=host,
+                        port=port,
+                    )
+                    websocket.app.state.controller = controller
+                    connected = controller.connect()
+                    if connected:
+                        controller.enabled = True
+                    await websocket.send_text(json.dumps({
+                        "type": "control_status",
+                        "control": controller.status.to_dict(),
+                        "enabled": controller.enabled,
+                    }))
+
             except (json.JSONDecodeError, ValueError):
                 pass
 
@@ -149,10 +256,14 @@ async def websocket_endpoint(websocket: WebSocket):
             image_b64 = base64.b64encode(buffer).decode("utf-8")
             robot_angles = _compute_robot_angles(angles, robot)
 
+            _send_to_controller(robot_angles)
+
             message = _safe_json({
                 "image": image_b64,
                 "angles": angles,
                 "robot": robot_angles,
+                "control": controller.status.to_dict(),
+                "control_enabled": controller.enabled,
             })
 
             try:
