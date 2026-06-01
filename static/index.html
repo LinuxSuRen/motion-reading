@@ -1,0 +1,1721 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Motion Reading - Arm Pose Dashboard</title>
+<style>
+  /* ============================================
+     DESIGN SYSTEM TOKENS
+     ============================================ */
+  :root {
+    --bg-deep: #0a0a14;
+    --bg-panel: #111122;
+    --bg-card: #181830;
+    --bg-elevated: #1e1e3a;
+    --border-subtle: #252545;
+    --border-active: #3a3a6a;
+    --text-primary: #e8e8f4;
+    --text-secondary: #9494b8;
+    --text-muted: #5a5a7a;
+    --accent-healthy: #00d4aa;
+    --accent-borderline: #f0a500;
+    --accent-critical: #ff3b5c;
+    --accent-info: #4da6ff;
+    --status-connected: #00d4aa;
+    --status-disconnected: #ff3b5c;
+    --gauge-track: #1a1a35;
+    --gauge-glow-healthy: rgba(0, 212, 170, 0.3);
+    --gauge-glow-warn: rgba(240, 165, 0, 0.3);
+    --gauge-glow-critical: rgba(255, 59, 92, 0.3);
+    --font-mono: 'SF Mono', 'Fira Code', 'Consolas', 'Courier New', monospace;
+    --font-sans: 'SF Pro Display', 'Segoe UI', 'Helvetica Neue', system-ui, sans-serif;
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 16px;
+    --transition-base: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /* ============================================
+     RESET & BASE
+     ============================================ */
+  *, *::before, *::after {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    background: var(--bg-deep);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* ============================================
+     HEADER
+     ============================================ */
+  .header {
+    height: 52px;
+    padding: 0 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--border-subtle);
+    flex-shrink: 0;
+    position: relative;
+    z-index: 10;
+  }
+
+  .header-title {
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .header-title::before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent-healthy);
+    box-shadow: 0 0 8px var(--gauge-glow-healthy);
+  }
+
+  .header-stats {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+
+  .stat-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    font-family: var(--font-mono);
+    color: var(--text-secondary);
+  }
+
+  .stat-value {
+    color: var(--text-primary);
+    font-weight: 600;
+  }
+
+  /* ============================================
+     CONNECTION STATUS
+     ============================================ */
+  .connection-indicator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 12px;
+    border-radius: 20px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
+    font-size: 12px;
+    font-family: var(--font-mono);
+    transition: all var(--transition-base);
+  }
+
+  .connection-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    transition: all var(--transition-base);
+  }
+
+  .connection-dot.connected {
+    background: var(--status-connected);
+    box-shadow: 0 0 8px rgba(0, 212, 170, 0.6);
+    animation: pulse-connected 2s ease-in-out infinite;
+  }
+
+  .connection-dot.disconnected {
+    background: var(--status-disconnected);
+    box-shadow: 0 0 8px rgba(255, 59, 92, 0.4);
+  }
+
+  .connection-indicator.connected {
+    border-color: rgba(0, 212, 170, 0.3);
+    color: var(--accent-healthy);
+  }
+
+  .connection-indicator.disconnected {
+    border-color: rgba(255, 59, 92, 0.3);
+    color: var(--accent-critical);
+  }
+
+  @keyframes pulse-connected {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  /* ============================================
+     MAIN LAYOUT
+     ============================================ */
+  .main-container {
+    display: flex;
+    height: calc(100vh - 52px - 32px);
+    gap: 0;
+  }
+
+  /* ============================================
+     LEFT PANEL — CAMERA FEED
+     ============================================ */
+  .camera-panel {
+    flex: 1 1 55%;
+    min-width: 0;
+    position: relative;
+    background: var(--bg-deep);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-right: 1px solid var(--border-subtle);
+  }
+
+  .camera-container {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+
+  .camera-canvas {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    display: block;
+    border-radius: 0;
+    transition: opacity 0.15s ease;
+  }
+
+  .skeleton-overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .camera-placeholder {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 14px;
+    gap: 12px;
+  }
+
+  .camera-placeholder-icon {
+    width: 64px;
+    height: 64px;
+    border: 2px dashed var(--border-subtle);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.3;
+  }
+
+  .camera-placeholder-icon::after {
+    content: '';
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--border-subtle);
+    border-radius: 50%;
+  }
+
+  .camera-overlay-hud {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    background: rgba(0,0,0,0.5);
+    padding: 4px 10px;
+    border-radius: var(--radius-sm);
+    letter-spacing: 0.5px;
+    pointer-events: none;
+  }
+
+  /* ============================================
+     RIGHT PANEL — ANGLE DATA
+     ============================================ */
+  .data-panel {
+    flex: 0 0 45%;
+    min-width: 520px;
+    max-width: 620px;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 16px;
+    gap: 12px;
+    background: var(--bg-panel);
+  }
+
+  .data-panel::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  .data-panel::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .data-panel::-webkit-scrollbar-thumb {
+    background: var(--border-subtle);
+    border-radius: 2px;
+  }
+
+  /* ============================================
+     SECTION HEADERS
+     ============================================ */
+  .section-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+    padding-left: 2px;
+  }
+
+  /* ============================================
+     ARM ANGLES — TWO-COLUMN GRID
+     ============================================ */
+  .arm-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 4px;
+  }
+
+  .arm-column-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-align: center;
+    padding: 6px 0;
+    background: var(--bg-card);
+    border-radius: var(--radius-sm);
+    letter-spacing: 0.5px;
+  }
+
+  .arm-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    transition: border-color var(--transition-base);
+  }
+
+  .arm-card:hover {
+    border-color: var(--border-active);
+  }
+
+  .angle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .angle-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    font-weight: 500;
+    flex: 0 0 auto;
+    min-width: 60px;
+  }
+
+  .angle-gauge-container {
+    flex: 0 0 56px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .angle-gauge-svg {
+    width: 56px;
+    height: 56px;
+    transform: rotate(-90deg);
+  }
+
+  .angle-gauge-track {
+    fill: none;
+    stroke: var(--gauge-track);
+    stroke-width: 4;
+  }
+
+  .angle-gauge-fill {
+    fill: none;
+    stroke-width: 4;
+    stroke-linecap: round;
+    filter: none;
+    transition: stroke-dashoffset var(--transition-base), stroke var(--transition-base), filter var(--transition-base);
+  }
+
+  .angle-value-big {
+    font-family: var(--font-mono);
+    font-size: 28px;
+    font-weight: 700;
+    line-height: 1;
+    text-align: right;
+    min-width: 65px;
+    transition: color var(--transition-base);
+  }
+
+  .angle-value-deg {
+    font-size: 14px;
+    font-weight: 400;
+    opacity: 0.6;
+  }
+
+  /* ============================================
+     HAND ANGLES — TWO-COLUMN
+     ============================================ */
+  .hands-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .hand-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    transition: border-color var(--transition-base);
+  }
+
+  .hand-card:hover {
+    border-color: var(--border-active);
+  }
+
+  .hand-card-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border-subtle);
+    margin-bottom: 2px;
+  }
+
+  .finger-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 8px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-elevated);
+    gap: 8px;
+    transition: background var(--transition-base);
+  }
+
+  .finger-name {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    text-transform: capitalize;
+    min-width: 48px;
+  }
+
+  .finger-status-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+
+  .extension-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    transition: all var(--transition-base);
+    flex-shrink: 0;
+  }
+
+  .extension-dot.extended {
+    background: var(--accent-healthy);
+    box-shadow: 0 0 6px rgba(0, 212, 170, 0.5);
+  }
+
+  .extension-dot.not-extended {
+    background: #3a3a5a;
+    box-shadow: none;
+  }
+
+  .pip-value {
+    font-family: var(--font-mono);
+    font-size: 18px;
+    font-weight: 600;
+    min-width: 52px;
+    text-align: right;
+    transition: color var(--transition-base);
+  }
+
+  .pip-value .deg-symbol {
+    font-size: 11px;
+    opacity: 0.6;
+    font-weight: 400;
+  }
+
+  .no-data {
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 16px;
+    font-weight: 600;
+  }
+
+  /* ============================================
+     FPS COUNTER — FOOTER
+     ============================================ */
+  .footer-bar {
+    height: 32px;
+    padding: 0 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--bg-panel);
+    border-top: 1px solid var(--border-subtle);
+    font-size: 11px;
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+
+  .fps-display {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .fps-value {
+    color: var(--accent-info);
+    font-weight: 600;
+    font-size: 13px;
+  }
+
+  .fps-bar {
+    width: 60px;
+    height: 4px;
+    background: var(--gauge-track);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .fps-bar-fill {
+    height: 100%;
+    background: var(--accent-info);
+    border-radius: 2px;
+    transition: width 0.3s ease;
+  }
+
+  .frame-count {
+    color: var(--text-muted);
+  }
+
+  /* ============================================
+     HELPERS
+     ============================================ */
+  .color-healthy { color: var(--accent-healthy); }
+  .color-borderline { color: var(--accent-borderline); }
+  .color-critical { color: var(--accent-critical); }
+
+  .gauge-glow-healthy { filter: drop-shadow(0 0 4px var(--gauge-glow-healthy)); }
+  .gauge-glow-warn { filter: drop-shadow(0 0 4px var(--gauge-glow-warn)); }
+  .gauge-glow-critical { filter: drop-shadow(0 0 4px var(--gauge-glow-critical)); }
+
+  .robot-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .robot-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: 12px;
+  }
+
+  .robot-card-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .robot-joints {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+    margin-bottom: 8px;
+  }
+
+  .robot-joint {
+    text-align: center;
+    padding: 4px 2px;
+    background: var(--bg-elevated);
+    border-radius: var(--radius-sm);
+    transition: background var(--transition-base);
+  }
+
+  .robot-joint-name {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-secondary);
+    margin-bottom: 2px;
+  }
+
+  .robot-joint-val {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 700;
+    transition: color var(--transition-base);
+  }
+
+  .robot-gripper-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-top: 6px;
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .gripper-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    min-width: 42px;
+  }
+
+  .gripper-bar {
+    flex: 1;
+    height: 8px;
+    background: var(--gauge-track);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .gripper-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width var(--transition-base), background var(--transition-base);
+  }
+
+  .gripper-value {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-primary);
+    min-width: 32px;
+    text-align: right;
+  }
+
+  .robot-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .robot-selector {
+    font-family: var(--font-sans);
+    font-size: 11px;
+    font-weight: 500;
+    padding: 4px 28px 4px 10px;
+    border: 1px solid var(--border-active);
+    border-radius: var(--radius-sm);
+    background: var(--bg-card);
+    color: var(--text-primary);
+    cursor: pointer;
+    outline: none;
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%239494b8'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+    transition: border-color var(--transition-base);
+  }
+
+  .robot-selector:hover {
+    border-color: var(--accent-healthy);
+  }
+
+  .robot-selector:focus {
+    border-color: var(--accent-info);
+  }
+
+  .robot-selector option {
+    background: var(--bg-card);
+    color: var(--text-primary);
+  }
+
+  .face-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 6px;
+  }
+
+  .face-stat {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 6px;
+    background: var(--bg-card);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-subtle);
+  }
+
+  .face-label {
+    font-size: 10px;
+    color: var(--text-secondary);
+    min-width: 44px;
+  }
+
+  .face-bar {
+    flex: 1;
+    height: 6px;
+    background: var(--gauge-track);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .face-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width var(--transition-base), background var(--transition-base);
+  }
+
+  .face-value {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-primary);
+    min-width: 28px;
+    text-align: right;
+  }
+
+  .face-head-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 6px;
+    padding: 4px 8px;
+    background: var(--bg-card);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-subtle);
+    font-size: 11px;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+  }
+
+  .face-head-row b {
+    color: var(--text-primary);
+    font-weight: 600;
+  }
+
+  .face-head-label {
+    color: var(--text-muted);
+    margin-right: 4px;
+  }
+
+  .face-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 36px;
+    height: 20px;
+  }
+
+  .toggle-input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+
+  .toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    inset: 0;
+    background: var(--border-subtle);
+    border-radius: 10px;
+    transition: background var(--transition-base);
+  }
+
+  .toggle-slider::before {
+    content: '';
+    position: absolute;
+    height: 14px;
+    width: 14px;
+    left: 3px;
+    bottom: 3px;
+    background: var(--text-secondary);
+    border-radius: 50%;
+    transition: transform var(--transition-base);
+  }
+
+  .toggle-input:checked + .toggle-slider {
+    background: var(--accent-healthy);
+  }
+
+  .toggle-input:checked + .toggle-slider::before {
+    transform: translateX(16px);
+    background: white;
+  }
+
+  /* ============================================
+     RESPONSIVE
+     ============================================ */
+  @media (max-width: 900px) {
+    .main-container {
+      flex-direction: column;
+      height: auto;
+      overflow-y: auto;
+    }
+    .camera-panel {
+      flex: 0 0 40vh;
+      border-right: none;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .data-panel {
+      flex: 0 0 auto;
+      min-width: 0;
+      max-width: none;
+    }
+  }
+</style>
+</head>
+<body>
+
+<!-- ============================================ -->
+<!-- HEADER -->
+<!-- ============================================ -->
+<header class="header">
+  <div class="header-title">Motion Reading &mdash; Arm Pose Dashboard</div>
+  <div class="header-stats">
+    <div class="stat-item" id="frame-total-stat">
+      Frames: <span class="stat-value" id="frame-total">0</span>
+    </div>
+    <div class="connection-indicator disconnected" id="connection-indicator">
+      <span class="connection-dot disconnected" id="connection-dot"></span>
+      <span id="connection-text">Disconnected</span>
+    </div>
+  </div>
+</header>
+
+<!-- ============================================ -->
+<!-- MAIN CONTENT -->
+<!-- ============================================ -->
+<div class="main-container">
+
+  <!-- LEFT: Camera Feed -->
+  <section class="camera-panel" id="camera-panel">
+    <div class="camera-container">
+      <canvas class="camera-canvas" id="camera-canvas" width="640" height="480"></canvas>
+      <div class="camera-placeholder" id="camera-placeholder">
+        <div class="camera-placeholder-icon"></div>
+        <span>Waiting for camera stream...</span>
+      </div>
+      <div class="camera-overlay-hud" id="camera-hud">LIVE</div>
+    </div>
+  </section>
+
+  <!-- RIGHT: Angle Data -->
+  <section class="data-panel" id="data-panel">
+
+    <!-- Arm Angles -->
+    <div class="section-title">Arm Angles</div>
+    <div class="arm-grid">
+      <div class="arm-column-label">LEFT ARM</div>
+      <div class="arm-column-label">RIGHT ARM</div>
+
+      <div class="arm-card" id="left-arm-card">
+        <div class="angle-row" id="left-elbow-row">
+          <span class="angle-label">Elbow</span>
+          <div class="angle-gauge-container">
+            <svg class="angle-gauge-svg" viewBox="0 0 56 56">
+              <circle class="angle-gauge-track" cx="28" cy="28" r="24"/>
+              <circle class="angle-gauge-fill" id="left-elbow-gauge" cx="28" cy="28" r="24"
+                      stroke-dasharray="150.8" stroke-dashoffset="150.8"
+                      stroke="var(--accent-healthy)"/>
+            </svg>
+          </div>
+          <span class="angle-value-big" id="left-elbow-val">--<span class="angle-value-deg"></span></span>
+        </div>
+        <div class="angle-row" id="left-shoulder-row">
+          <span class="angle-label">Shoulder</span>
+          <div class="angle-gauge-container">
+            <svg class="angle-gauge-svg" viewBox="0 0 56 56">
+              <circle class="angle-gauge-track" cx="28" cy="28" r="24"/>
+              <circle class="angle-gauge-fill" id="left-shoulder-gauge" cx="28" cy="28" r="24"
+                      stroke-dasharray="150.8" stroke-dashoffset="150.8"
+                      stroke="var(--accent-healthy)"/>
+            </svg>
+          </div>
+          <span class="angle-value-big" id="left-shoulder-val">--<span class="angle-value-deg"></span></span>
+        </div>
+        <div class="angle-row" id="left-wrist-row">
+          <span class="angle-label">Wrist</span>
+          <div class="angle-gauge-container">
+            <svg class="angle-gauge-svg" viewBox="0 0 56 56">
+              <circle class="angle-gauge-track" cx="28" cy="28" r="24"/>
+              <circle class="angle-gauge-fill" id="left-wrist-gauge" cx="28" cy="28" r="24"
+                      stroke-dasharray="150.8" stroke-dashoffset="150.8"
+                      stroke="var(--accent-healthy)"/>
+            </svg>
+          </div>
+          <span class="angle-value-big" id="left-wrist-val">--<span class="angle-value-deg"></span></span>
+        </div>
+      </div>
+
+      <div class="arm-card" id="right-arm-card">
+        <div class="angle-row" id="right-elbow-row">
+          <span class="angle-label">Elbow</span>
+          <div class="angle-gauge-container">
+            <svg class="angle-gauge-svg" viewBox="0 0 56 56">
+              <circle class="angle-gauge-track" cx="28" cy="28" r="24"/>
+              <circle class="angle-gauge-fill" id="right-elbow-gauge" cx="28" cy="28" r="24"
+                      stroke-dasharray="150.8" stroke-dashoffset="150.8"
+                      stroke="var(--accent-healthy)"/>
+            </svg>
+          </div>
+          <span class="angle-value-big" id="right-elbow-val">--<span class="angle-value-deg"></span></span>
+        </div>
+        <div class="angle-row" id="right-shoulder-row">
+          <span class="angle-label">Shoulder</span>
+          <div class="angle-gauge-container">
+            <svg class="angle-gauge-svg" viewBox="0 0 56 56">
+              <circle class="angle-gauge-track" cx="28" cy="28" r="24"/>
+              <circle class="angle-gauge-fill" id="right-shoulder-gauge" cx="28" cy="28" r="24"
+                      stroke-dasharray="150.8" stroke-dashoffset="150.8"
+                      stroke="var(--accent-healthy)"/>
+            </svg>
+          </div>
+          <span class="angle-value-big" id="right-shoulder-val">--<span class="angle-value-deg"></span></span>
+        </div>
+        <div class="angle-row" id="right-wrist-row">
+          <span class="angle-label">Wrist</span>
+          <div class="angle-gauge-container">
+            <svg class="angle-gauge-svg" viewBox="0 0 56 56">
+              <circle class="angle-gauge-track" cx="28" cy="28" r="24"/>
+              <circle class="angle-gauge-fill" id="right-wrist-gauge" cx="28" cy="28" r="24"
+                      stroke-dasharray="150.8" stroke-dashoffset="150.8"
+                      stroke="var(--accent-healthy)"/>
+            </svg>
+          </div>
+          <span class="angle-value-big" id="right-wrist-val">--<span class="angle-value-deg"></span></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Hand Angles -->
+    <div class="section-title" style="margin-top: 4px;">Hand Angles</div>
+    <div class="hands-grid">
+      <div class="hand-card" id="left-hand-card">
+        <div class="hand-card-title">Left Hand</div>
+      </div>
+      <div class="hand-card" id="right-hand-card">
+        <div class="hand-card-title">Right Hand</div>
+      </div>
+    </div>
+
+    <!-- Face Expressions -->
+    <div class="section-title face-section-header" style="margin-top: 8px; display: none;" id="face-header">
+      <span>Face Expressions</span>
+      <label class="toggle-switch">
+        <input type="checkbox" id="face-toggle" class="toggle-input">
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+    <div class="face-section-body" id="face-body" style="display: none;">
+    <div class="face-grid" id="face-grid">
+      <div class="face-stat">
+        <span class="face-label">Mouth Open</span>
+        <div class="face-bar"><div class="face-bar-fill" id="face-mouth-fill"></div></div>
+        <span class="face-value" id="face-mouth-val">--</span>
+      </div>
+      <div class="face-stat">
+        <span class="face-label">Smile</span>
+        <div class="face-bar"><div class="face-bar-fill" id="face-smile-fill"></div></div>
+        <span class="face-value" id="face-smile-val">--</span>
+      </div>
+      <div class="face-stat">
+        <span class="face-label">L Eye</span>
+        <div class="face-bar"><div class="face-bar-fill" id="face-leye-fill"></div></div>
+        <span class="face-value" id="face-leye-val">--</span>
+      </div>
+      <div class="face-stat">
+        <span class="face-label">R Eye</span>
+        <div class="face-bar"><div class="face-bar-fill" id="face-reye-fill"></div></div>
+        <span class="face-value" id="face-reye-val">--</span>
+      </div>
+      <div class="face-stat">
+        <span class="face-label">L Brow</span>
+        <div class="face-bar"><div class="face-bar-fill" id="face-lbrow-fill"></div></div>
+        <span class="face-value" id="face-lbrow-val">--</span>
+      </div>
+      <div class="face-stat">
+        <span class="face-label">R Brow</span>
+        <div class="face-bar"><div class="face-bar-fill" id="face-rbrow-fill"></div></div>
+        <span class="face-value" id="face-rbrow-val">--</span>
+      </div>
+    </div>
+    <div class="face-head-row">
+      <span class="face-head-label">Head:</span>
+      <span>Yaw <b id="face-yaw">--</b></span>
+      <span>Pitch <b id="face-pitch">--</b></span>
+      <span>Roll <b id="face-roll">--</b></span>
+      <span>Blink: <span id="face-blink">--</span></span>
+    </div>
+    </div>
+
+    <!-- Robot Arm Joint Angles -->
+    <div class="section-title robot-section-header" style="margin-top: 8px;">
+      <span>Robot Arm</span>
+      <select class="robot-selector" id="robot-selector">
+        <option value="">Loading...</option>
+      </select>
+    </div>
+    <div class="robot-grid">
+      <div class="robot-card" id="robot-left-card">
+        <div class="robot-card-title">Left Arm → Robot</div>
+        <div class="robot-joints" id="robot-left-joints"></div>
+        <div class="robot-gripper-row">
+          <span class="gripper-label">Gripper</span>
+          <div class="gripper-bar"><div class="gripper-fill" id="robot-left-gripper-fill"></div></div>
+          <span class="gripper-value" id="robot-left-gripper-val">0%</span>
+        </div>
+      </div>
+      <div class="robot-card" id="robot-right-card">
+        <div class="robot-card-title">Right Arm → Robot</div>
+        <div class="robot-joints" id="robot-right-joints"></div>
+        <div class="robot-gripper-row">
+          <span class="gripper-label">Gripper</span>
+          <div class="gripper-bar"><div class="gripper-fill" id="robot-right-gripper-fill"></div></div>
+          <span class="gripper-value" id="robot-right-gripper-val">0%</span>
+        </div>
+      </div>
+    </div>
+
+  </section>
+</div>
+
+<!-- ============================================ -->
+<!-- FOOTER -->
+<!-- ============================================ -->
+<footer class="footer-bar">
+  <div class="fps-display">
+    FPS <span class="fps-value" id="fps-value">0</span>
+    <div class="fps-bar"><div class="fps-bar-fill" id="fps-bar-fill" style="width: 0%"></div></div>
+  </div>
+  <div class="frame-count" id="frame-time">Last frame: --</div>
+</footer>
+
+<!-- ============================================ -->
+<!-- ALL JAVASCRIPT INLINE — NO EXTERNAL DEPS -->
+<!-- ============================================ -->
+<script>
+(function() {
+  'use strict';
+
+  // ────────────────────────────────────────────
+  // DOM REFERENCES
+  // ────────────────────────────────────────────
+  const canvas = document.getElementById('camera-canvas');
+  const ctx = canvas.getContext('2d');
+  const cameraPlaceholder = document.getElementById('camera-placeholder');
+  const cameraHud = document.getElementById('camera-hud');
+  const connectionDot = document.getElementById('connection-dot');
+  const connectionText = document.getElementById('connection-text');
+  const connectionIndicator = document.getElementById('connection-indicator');
+  const fpsValue = document.getElementById('fps-value');
+  const fpsBarFill = document.getElementById('fps-bar-fill');
+  const frameTotal = document.getElementById('frame-total');
+  const frameTime = document.getElementById('frame-time');
+
+  // ────────────────────────────────────────────
+  // COLOR CODING RULES
+  // ────────────────────────────────────────────
+  const HEALTHY = '#00d4aa';
+  const BORDERLINE = '#f0a500';
+  const CRITICAL = '#ff3b5c';
+  const MUTED = '#5a5a7a';
+
+  function getElbowColor(angle) {
+    if (angle === null || angle === undefined) return MUTED;
+    if (angle < 30) return CRITICAL;
+    if (angle <= 60) return BORDERLINE;
+    return HEALTHY;
+  }
+
+  function getShoulderColor(angle) {
+    if (angle === null || angle === undefined) return MUTED;
+    if (angle < 30) return CRITICAL;
+    if (angle <= 80) return BORDERLINE;
+    return HEALTHY;
+  }
+
+  function getWristColor(angle) {
+    if (angle === null || angle === undefined) return MUTED;
+    if (angle < 130) return CRITICAL;
+    if (angle <= 150) return BORDERLINE;
+    return HEALTHY;
+  }
+
+  function getPipColor(angle) {
+    if (angle === null || angle === undefined) return MUTED;
+    if (angle < 100) return BORDERLINE;
+    return HEALTHY;
+  }
+
+  // ────────────────────────────────────────────
+  // GAUGE HELPERS
+  // ────────────────────────────────────────────
+  const CIRCUMFERENCE = 2 * Math.PI * 24; // ~150.8
+
+  function updateGauge(gaugeEl, value, maxAngle, colorFn) {
+    const color = colorFn(value);
+    const fraction = (value !== null && value !== undefined)
+      ? Math.min(value / maxAngle, 1.0)
+      : 0;
+    const offset = CIRCUMFERENCE * (1 - fraction);
+
+    gaugeEl.style.strokeDashoffset = offset;
+    gaugeEl.style.stroke = color;
+
+    // Add glow for non-muted values
+    if (color === HEALTHY) {
+      gaugeEl.style.filter = 'drop-shadow(0 0 4px rgba(0, 212, 170, 0.3))';
+    } else if (color === BORDERLINE) {
+      gaugeEl.style.filter = 'drop-shadow(0 0 4px rgba(240, 165, 0, 0.3))';
+    } else if (color === CRITICAL) {
+      gaugeEl.style.filter = 'drop-shadow(0 0 4px rgba(255, 59, 92, 0.3))';
+    } else {
+      gaugeEl.style.filter = 'none';
+    }
+  }
+
+  function formatAngle(val) {
+    if (val === null || val === undefined || val === '--') return '--';
+    return Number(val).toFixed(1);
+  }
+
+  // ────────────────────────────────────────────
+  // ARM ANGLE ELEMENTS MAP
+  // ────────────────────────────────────────────
+  const armConfig = {
+    left_arm: {
+      elbow: { valEl: 'left-elbow-val', gaugeEl: 'left-elbow-gauge', colorFn: getElbowColor, maxAngle: 180 },
+      shoulder: { valEl: 'left-shoulder-val', gaugeEl: 'left-shoulder-gauge', colorFn: getShoulderColor, maxAngle: 180 },
+      wrist: { valEl: 'left-wrist-val', gaugeEl: 'left-wrist-gauge', colorFn: getWristColor, maxAngle: 180 }
+    },
+    right_arm: {
+      elbow: { valEl: 'right-elbow-val', gaugeEl: 'right-elbow-gauge', colorFn: getElbowColor, maxAngle: 180 },
+      shoulder: { valEl: 'right-shoulder-val', gaugeEl: 'right-shoulder-gauge', colorFn: getShoulderColor, maxAngle: 180 },
+      wrist: { valEl: 'right-wrist-val', gaugeEl: 'right-wrist-gauge', colorFn: getWristColor, maxAngle: 180 }
+    }
+  };
+
+  // ────────────────────────────────────────────
+  // HAND TEMPLATES
+  // ────────────────────────────────────────────
+  const FINGER_NAMES = ['thumb', 'index', 'middle', 'ring', 'pinky'];
+
+  function buildHandCard(containerId) {
+    const container = document.getElementById(containerId);
+    // Clear existing (keep the title)
+    const title = container.querySelector('.hand-card-title');
+    container.innerHTML = '';
+    if (title) container.appendChild(title);
+
+    FINGER_NAMES.forEach(function(finger) {
+      const row = document.createElement('div');
+      row.className = 'finger-row';
+      row.id = containerId.replace('-card', '') + '-' + finger + '-row';
+
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'finger-name';
+      nameSpan.textContent = finger;
+
+      const statusGroup = document.createElement('span');
+      statusGroup.className = 'finger-status-group';
+
+      const dot = document.createElement('span');
+      dot.className = 'extension-dot not-extended';
+      dot.id = containerId.replace('-card', '') + '-' + finger + '-dot';
+
+      const pipSpan = document.createElement('span');
+      pipSpan.className = 'pip-value';
+      pipSpan.id = containerId.replace('-card', '') + '-' + finger + '-pip';
+      pipSpan.innerHTML = '--<span class="deg-symbol"></span>';
+
+      statusGroup.appendChild(dot);
+      statusGroup.appendChild(pipSpan);
+      row.appendChild(nameSpan);
+      row.appendChild(statusGroup);
+      container.appendChild(row);
+    });
+  }
+
+  buildHandCard('left-hand-card');
+  buildHandCard('right-hand-card');
+
+  // ────────────────────────────────────────────
+  // UPDATE ANGLE DISPLAYS
+  // ────────────────────────────────────────────
+  function updateArmAngles(side, data) {
+    const config = armConfig[side];
+    if (!config || !data) return;
+
+    Object.keys(config).forEach(function(joint) {
+      const jointCfg = config[joint];
+      const value = data[joint];
+      const valEl = document.getElementById(jointCfg.valEl);
+      const gaugeEl = document.getElementById(jointCfg.gaugeEl);
+      const color = jointCfg.colorFn(value);
+
+      if (valEl) {
+        valEl.innerHTML = formatAngle(value) +
+          ((value !== null && value !== undefined) ? '<span class="angle-value-deg">&deg;</span>' : '<span class="angle-value-deg"></span>');
+        valEl.style.color = color;
+      }
+
+      if (gaugeEl) {
+        updateGauge(gaugeEl, value, jointCfg.maxAngle, jointCfg.colorFn);
+      }
+    });
+  }
+
+  function updateHandData(side, data) {
+    if (!data) return;
+    const prefix = side + '_hand';
+
+    FINGER_NAMES.forEach(function(finger) {
+      const fingerData = data[finger];
+      if (!fingerData) return;
+
+      const dot = document.getElementById(prefix + '-' + finger + '-dot');
+      const pip = document.getElementById(prefix + '-' + finger + '-pip');
+      const extended = fingerData.extended;
+      const pipAngle = fingerData.pip_angle;
+
+      if (dot) {
+        if (extended === true) {
+          dot.className = 'extension-dot extended';
+        } else if (extended === false) {
+          dot.className = 'extension-dot not-extended';
+        } else {
+          dot.className = 'extension-dot not-extended';
+        }
+      }
+
+      if (pip) {
+        if (pipAngle !== null && pipAngle !== undefined) {
+          const color = getPipColor(pipAngle);
+          pip.style.color = color;
+          pip.innerHTML = Number(pipAngle).toFixed(1) + '<span class="deg-symbol">&deg;</span>';
+        } else {
+          pip.style.color = MUTED;
+          pip.innerHTML = '--<span class="deg-symbol"></span>';
+        }
+      }
+    });
+  }
+
+  function updateAllAngles(angles) {
+    if (!angles) return;
+
+    updateArmAngles('left_arm', angles.left_arm);
+    updateArmAngles('right_arm', angles.right_arm);
+    updateHandData('left', angles.left_hand);
+    updateHandData('right', angles.right_hand);
+  }
+
+  var ROBOT_JOINT_NAMES = ['j0', 'j1', 'j2', 'j3', 'j4', 'j5', 'j6'];
+
+  function buildRobotCards() {
+    ['left', 'right'].forEach(function(side) {
+      var container = document.getElementById('robot-' + side + '-joints');
+      ROBOT_JOINT_NAMES.forEach(function(name) {
+        var el = document.createElement('div');
+        el.className = 'robot-joint';
+        el.innerHTML =
+          '<div class="robot-joint-name">' + name.toUpperCase() + '</div>' +
+          '<div class="robot-joint-val" id="robot-' + side + '-' + name + '-val">--</div>';
+        container.appendChild(el);
+      });
+    });
+  }
+
+  buildRobotCards();
+
+  var JOINT_COLORS = {
+    low: HEALTHY,
+    mid: BORDERLINE,
+    high: CRITICAL
+  };
+
+  function jointColor(angle, limit) {
+    if (angle === null || angle === undefined) return MUTED;
+    var absVal = Math.abs(angle);
+    var range = Math.abs(limit) || 180;
+    if (absVal < range * 0.4) return HEALTHY;
+    if (absVal < range * 0.75) return BORDERLINE;
+    return CRITICAL;
+  }
+
+  function updateRobotData(robotData) {
+    if (!robotData) return;
+
+    ['left', 'right'].forEach(function(side) {
+      var sideData = robotData[side];
+      if (!sideData) return;
+
+      var joints = sideData.joints || {};
+      var gripper = sideData.gripper;
+
+      ROBOT_JOINT_NAMES.forEach(function(name) {
+        var valEl = document.getElementById('robot-' + side + '-' + name + '-val');
+        if (!valEl) return;
+        var val = joints[name];
+        if (val !== null && val !== undefined) {
+          valEl.textContent = Number(val).toFixed(1);
+          valEl.style.color = jointColor(val, 180);
+        } else {
+          valEl.textContent = '--';
+          valEl.style.color = MUTED;
+        }
+      });
+
+      var gripFill = document.getElementById('robot-' + side + '-gripper-fill');
+      var gripVal = document.getElementById('robot-' + side + '-gripper-val');
+      if (gripFill && gripVal) {
+        var pct = Math.round((gripper || 0) * 100);
+        gripFill.style.width = pct + '%';
+        gripVal.textContent = pct + '%';
+        if (pct < 30) {
+          gripFill.style.background = HEALTHY;
+          gripVal.style.color = HEALTHY;
+        } else if (pct < 70) {
+          gripFill.style.background = BORDERLINE;
+          gripVal.style.color = BORDERLINE;
+        } else {
+          gripFill.style.background = CRITICAL;
+          gripVal.style.color = CRITICAL;
+        }
+      }
+    });
+  }
+
+  // ────────────────────────────────────────────
+  // CAMERA RENDERING
+  // ────────────────────────────────────────────
+  let hasReceivedFrame = false;
+  const imageLoader = new Image();
+
+  imageLoader.onload = function() {
+    // Maintain aspect ratio within canvas container
+    const panel = document.getElementById('camera-panel');
+    const panelW = panel.clientWidth;
+    const panelH = panel.clientHeight;
+
+    const imgRatio = imageLoader.naturalWidth / imageLoader.naturalHeight;
+    const panelRatio = panelW / panelH;
+
+    let drawW, drawH;
+    if (imgRatio > panelRatio) {
+      drawW = panelW;
+      drawH = panelW / imgRatio;
+    } else {
+      drawH = panelH;
+      drawW = panelH * imgRatio;
+    }
+
+    canvas.width = drawW;
+    canvas.height = drawH;
+    canvas.style.width = drawW + 'px';
+    canvas.style.height = drawH + 'px';
+
+    ctx.clearRect(0, 0, drawW, drawH);
+    ctx.drawImage(imageLoader, 0, 0, drawW, drawH);
+
+    if (!hasReceivedFrame) {
+      hasReceivedFrame = true;
+      cameraPlaceholder.style.display = 'none';
+      canvas.style.display = 'block';
+    }
+  };
+
+  imageLoader.onerror = function() {
+    console.warn('Failed to decode image frame');
+    if (!hasReceivedFrame) {
+      canvas.style.display = 'none';
+      cameraPlaceholder.style.display = 'flex';
+    }
+  };
+
+  function renderFrame(base64Image) {
+    if (!base64Image || typeof base64Image !== 'string') return;
+    imageLoader.src = 'data:image/jpeg;base64,' + base64Image;
+  }
+
+  // ────────────────────────────────────────────
+  // FPS TRACKING
+  // ────────────────────────────────────────────
+  let frameCount = 0;
+  let lastFpsUpdate = performance.now();
+  let fps = 0;
+  let frameTimestamps = [];
+
+  function updateFps() {
+    const now = performance.now();
+    frameCount++;
+    frameTimestamps.push(now);
+
+    // Keep only timestamps from last second
+    while (frameTimestamps.length > 0 && frameTimestamps[0] < now - 1000) {
+      frameTimestamps.shift();
+    }
+
+    fps = frameTimestamps.length;
+
+    // Update display every 200ms
+    if (now - lastFpsUpdate > 200) {
+      lastFpsUpdate = now;
+      fpsValue.textContent = fps;
+      fpsBarFill.style.width = Math.min(fps / 30 * 100, 100) + '%';
+
+      if (fps >= 25) {
+        fpsValue.style.color = HEALTHY;
+        fpsBarFill.style.background = HEALTHY;
+      } else if (fps >= 15) {
+        fpsValue.style.color = BORDERLINE;
+        fpsBarFill.style.background = BORDERLINE;
+      } else {
+        fpsValue.style.color = CRITICAL;
+        fpsBarFill.style.background = CRITICAL;
+      }
+
+      frameTotal.textContent = frameCount;
+
+      const timeStr = new Date().toLocaleTimeString();
+      frameTime.textContent = 'Last frame: ' + timeStr;
+    }
+  }
+
+  function clearAllDisplays() {
+    ['left', 'right'].forEach(function(side) {
+      ['elbow', 'shoulder', 'wrist'].forEach(function(joint) {
+        var valEl = document.getElementById(side + '-' + joint + '-val');
+        if (valEl) {
+          valEl.innerHTML = '--<span class="angle-value-deg"></span>';
+          valEl.style.color = MUTED;
+        }
+        var gaugeEl = document.getElementById(side + '-' + joint + '-gauge');
+        if (gaugeEl) {
+          gaugeEl.style.strokeDashoffset = '150.8';
+          gaugeEl.style.stroke = MUTED;
+          gaugeEl.style.filter = 'none';
+        }
+      });
+    });
+
+    ['left', 'right'].forEach(function(side) {
+      FINGER_NAMES.forEach(function(finger) {
+        var dot = document.getElementById(side + '_hand-' + finger + '-dot');
+        if (dot) dot.className = 'extension-dot not-extended';
+        var pip = document.getElementById(side + '_hand-' + finger + '-pip');
+        if (pip) {
+          pip.innerHTML = '--<span class="deg-symbol"></span>';
+          pip.style.color = MUTED;
+        }
+      });
+    });
+
+    ['left', 'right'].forEach(function(side) {
+      ROBOT_JOINT_NAMES.forEach(function(name) {
+        var valEl = document.getElementById('robot-' + side + '-' + name + '-val');
+        if (valEl) { valEl.textContent = '--'; valEl.style.color = MUTED; }
+      });
+      var gripFill = document.getElementById('robot-' + side + '-gripper-fill');
+      var gripVal = document.getElementById('robot-' + side + '-gripper-val');
+      if (gripFill) { gripFill.style.width = '0%'; gripFill.style.background = MUTED; }
+      if (gripVal) { gripVal.textContent = '--'; gripVal.style.color = MUTED; }
+    });
+
+    ['mouth', 'smile', 'leye', 'reye', 'lbrow', 'rbrow'].forEach(function(k) {
+      var fill = document.getElementById('face-' + k + '-fill');
+      var val = document.getElementById('face-' + k + '-val');
+      if (fill) { fill.style.width = '0%'; fill.style.background = MUTED; }
+      if (val) { val.textContent = '--'; val.style.color = MUTED; }
+    });
+    ['yaw', 'pitch', 'roll'].forEach(function(k) {
+      var el = document.getElementById('face-' + k);
+      if (el) { el.textContent = '--'; }
+    });
+    var blinkEl = document.getElementById('face-blink');
+    if (blinkEl) blinkEl.textContent = '--';
+  }
+
+  function updateFaceData(face) {
+    if (!face) return;
+
+    function setBarVal(key, val, maxVal) {
+      var fill = document.getElementById('face-' + key + '-fill');
+      var disp = document.getElementById('face-' + key + '-val');
+      if (!fill || !disp) return;
+      var pct = Math.min((val || 0) / maxVal * 100, 100);
+      fill.style.width = pct + '%';
+      fill.style.background = pct > 60 ? HEALTHY : (pct > 25 ? BORDERLINE : CRITICAL);
+      disp.textContent = (val || 0).toFixed(2);
+      disp.style.color = fill.style.background;
+    }
+
+    setBarVal('mouth', face.mouth_open, 1.0);
+    setBarVal('smile', face.smile, 1.0);
+    setBarVal('leye', face.left_ear, 0.4);
+    setBarVal('reye', face.right_ear, 0.4);
+    setBarVal('lbrow', face.left_brow, 1.5);
+    setBarVal('rbrow', face.right_brow, 1.5);
+
+    ['yaw', 'pitch', 'roll'].forEach(function(k) {
+      var el = document.getElementById('face-' + k);
+      if (el) el.textContent = (face['head_' + k] || 0).toFixed(1);
+    });
+
+    var blinkEl = document.getElementById('face-blink');
+    if (blinkEl) {
+      blinkEl.textContent = (face.blink_left || face.blink_right) ? 'BLINK' : 'Open';
+      blinkEl.style.color = (face.blink_left || face.blink_right) ? BORDERLINE : HEALTHY;
+    }
+  }
+
+  // ────────────────────────────────────────────
+  // WEBSOCKET CONNECTION
+  // ────────────────────────────────────────────
+  let ws = null;
+  let reconnectTimeout = null;
+  let reconnectDelay = 1000;
+  const MAX_RECONNECT_DELAY = 10000;
+
+  function setConnectionStatus(connected) {
+    if (connected) {
+      connectionDot.className = 'connection-dot connected';
+      connectionText.textContent = 'Connected';
+      connectionIndicator.className = 'connection-indicator connected';
+      cameraHud.textContent = 'LIVE';
+      cameraHud.style.color = HEALTHY;
+    } else {
+      connectionDot.className = 'connection-dot disconnected';
+      connectionText.textContent = 'Disconnected';
+      connectionIndicator.className = 'connection-indicator disconnected';
+      cameraHud.textContent = 'NO SIGNAL';
+      cameraHud.style.color = CRITICAL;
+    }
+  }
+
+  function connectWebSocket() {
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+      return;
+    }
+
+    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const url = protocol + '//' + location.host + '/ws';
+
+    try {
+      ws = new WebSocket(url);
+    } catch (e) {
+      console.error('WebSocket creation failed:', e);
+      scheduleReconnect();
+      return;
+    }
+
+    ws.onopen = function() {
+      console.log('WebSocket connected');
+      setConnectionStatus(true);
+      reconnectDelay = 1000;
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+        reconnectTimeout = null;
+      }
+    };
+
+    ws.onmessage = function(event) {
+      updateFps();
+
+      try {
+        const data = JSON.parse(event.data);
+
+        if (data.image) {
+          renderFrame(data.image);
+        }
+
+        if (data.angles) {
+          updateAllAngles(data.angles);
+          if (data.angles.face) {
+            updateFaceData(data.angles.face);
+          }
+        } else {
+          clearAllDisplays();
+        }
+
+        if (data.robot) {
+          updateRobotData(data.robot);
+        }
+
+        if (data.type === 'robot_changed' && data.robot) {
+          var sel = document.getElementById('robot-selector');
+          if (sel) sel.value = data.robot.id;
+        }
+
+        if (data.type === 'face_toggled') {
+          setFaceEnabled(data.enabled);
+        }
+      } catch (e) {
+        console.warn('Failed to parse WebSocket message:', e);
+      }
+    };
+
+    ws.onclose = function(event) {
+      console.log('WebSocket closed:', event.code, event.reason);
+      setConnectionStatus(false);
+      ws = null;
+      scheduleReconnect();
+    };
+
+    ws.onerror = function(err) {
+      console.error('WebSocket error:', err);
+      // onclose will fire after this
+    };
+  }
+
+  function scheduleReconnect() {
+    if (reconnectTimeout) return;
+
+    console.log('Reconnecting in', reconnectDelay, 'ms...');
+    reconnectTimeout = setTimeout(function() {
+      reconnectTimeout = null;
+      connectWebSocket();
+      reconnectDelay = Math.min(reconnectDelay * 1.5, MAX_RECONNECT_DELAY);
+    }, reconnectDelay);
+  }
+
+  function setFaceEnabled(enabled) {
+    var header = document.getElementById('face-header');
+    var body = document.getElementById('face-body');
+    var toggle = document.getElementById('face-toggle');
+    var show = enabled === true;
+    if (header) header.style.display = show ? 'flex' : 'none';
+    if (body) body.style.display = show ? 'block' : 'none';
+    if (toggle) toggle.checked = show;
+  }
+
+  function initFaceToggle() {
+    var toggle = document.getElementById('face-toggle');
+    if (!toggle) return;
+    toggle.addEventListener('change', function() {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          action: 'toggle_face',
+          enabled: toggle.checked
+        }));
+      }
+    });
+    setFaceEnabled(false);
+  }
+
+  function fetchRobots() {
+    fetch('/api/robots')
+      .then(function(r) { return r.json(); })
+      .then(function(robots) {
+        var sel = document.getElementById('robot-selector');
+        if (!sel) return;
+        sel.innerHTML = '';
+        robots.forEach(function(rb) {
+          var opt = document.createElement('option');
+          opt.value = rb.id;
+          opt.textContent = rb.manufacturer + ' ' + rb.model + ' (' + rb.dof + '-DOF)';
+          sel.appendChild(opt);
+        });
+        sel.value = 'nero7';
+
+        sel.addEventListener('change', function() {
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+              action: 'set_robot',
+              robot: sel.value
+            }));
+          }
+        });
+      })
+      .catch(function(err) {
+        console.warn('Failed to fetch robots:', err);
+      });
+  }
+
+  // ────────────────────────────────────────────
+  // INITIALIZATION
+  // ────────────────────────────────────────────
+  setConnectionStatus(false);
+  initFaceToggle();
+  fetchRobots();
+  connectWebSocket();
+
+  // Handle window resize for canvas
+  let resizeDebounce = null;
+  window.addEventListener('resize', function() {
+    if (resizeDebounce) clearTimeout(resizeDebounce);
+    resizeDebounce = setTimeout(function() {
+      if (hasReceivedFrame && imageLoader.complete && imageLoader.naturalWidth > 0) {
+        imageLoader.onload();
+      }
+    }, 250);
+  });
+
+  // Handle page visibility for reconnect
+  document.addEventListener('visibilitychange', function() {
+    if (document.visibilityState === 'visible' && (!ws || ws.readyState === WebSocket.CLOSED)) {
+      console.log('Page visible again, reconnecting...');
+      reconnectDelay = 1000;
+      connectWebSocket();
+    }
+  });
+
+  console.log('Motion Reading Dashboard initialized');
+})();
+</script>
+
+</body>
+</html>
