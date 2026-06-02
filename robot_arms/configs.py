@@ -1,5 +1,8 @@
+import math
+import os
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 
 @dataclass
@@ -114,3 +117,91 @@ def get_config(robot_id: str) -> RobotConfig:
         available = ", ".join(ROBOT_CONFIGS.keys())
         raise ValueError(f"Unknown robot '{robot_id}'. Available: {available}")
     return cfg
+
+
+def load_robot_from_urdf(urdf_path: str, robot_id: str = "urdf_robot") -> RobotConfig:
+    tree = ET.parse(urdf_path)
+    root = tree.getroot()
+    name = root.get("name", robot_id)
+
+    joints: Dict[str, JointConfig] = {}
+    dof = 0
+
+    for joint in root.findall("joint"):
+        jtype = joint.get("type", "")
+        if jtype == "fixed":
+            continue
+        jname = joint.get("name", "")
+        limit = joint.find("limit")
+        if limit is None:
+            continue
+        lower = float(limit.get("lower", 0)) if limit.get("lower") is not None else 0
+        upper = float(limit.get("upper", 0)) if limit.get("upper") is not None else 0
+        jkey = f"j{dof}"
+        joints[jkey] = JointConfig(
+            min_deg=round(math.degrees(lower), 1),
+            max_deg=round(math.degrees(upper), 1),
+            label=jname,
+        )
+        dof += 1
+
+    cfg = RobotConfig(
+        manufacturer="URDF",
+        model=name,
+        dof=dof,
+        joints=joints,
+        description=f"Loaded from {os.path.basename(urdf_path)}",
+    )
+    ROBOT_CONFIGS[robot_id] = cfg
+    return cfg
+
+
+def load_urdf_kinematics(urdf_path: str) -> List[dict]:
+    tree = ET.parse(urdf_path)
+    root = tree.getroot()
+
+    links = {}
+    for link in root.findall("link"):
+        links[link.get("name")] = link
+
+    chain = []
+    for joint in root.findall("joint"):
+        jtype = joint.get("type", "")
+        if jtype == "fixed":
+            continue
+        jname = joint.get("name", "")
+        parent_el = joint.find("parent")
+        child_el = joint.find("child")
+        parent = parent_el.get("link", "") if parent_el is not None else ""
+        child = child_el.get("link", "") if child_el is not None else ""
+        origin = joint.find("origin")
+        xyz = [0.0, 0.0, 0.0]
+        rpy = [0.0, 0.0, 0.0]
+        if origin is not None:
+            if origin.get("xyz"):
+                xyz = [float(v) for v in origin.get("xyz").split()]
+            if origin.get("rpy"):
+                rpy = [float(v) for v in origin.get("rpy").split()]
+        axis = joint.find("axis")
+        ax = [0.0, 0.0, 1.0]
+        if axis is not None and axis.get("xyz"):
+            ax = [float(v) for v in axis.get("xyz").split()]
+        limit = joint.find("limit")
+        lower = 0.0
+        upper = 0.0
+        if limit is not None:
+            lower = float(limit.get("lower", 0)) if limit.get("lower") else 0
+            upper = float(limit.get("upper", 0)) if limit.get("upper") else 0
+
+        chain.append({
+            "name": jname,
+            "parent": parent,
+            "child": child,
+            "origin_xyz": xyz,
+            "origin_rpy": rpy,
+            "axis_xyz": ax,
+            "limit_lower": lower,
+            "limit_upper": upper,
+        })
+
+    return chain

@@ -10,11 +10,13 @@ import cv2
 import numpy as np
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 import uvicorn
 
 from pose_engine import PoseEngine
 from robot_arms.base import ArmVectors
 from robot_arms import get_robot, get_available_robots
+from robot_arms.configs import load_urdf_kinematics
 from robot_arms.controllers import (
     ControllerState,
     create_controller,
@@ -116,6 +118,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
 
 @app.get("/")
 async def root():
@@ -130,6 +134,18 @@ async def list_robots():
 @app.get("/api/controllers")
 async def list_controllers():
     return JSONResponse(get_available_controllers())
+
+
+@app.get("/api/urdf/kinematics")
+async def urdf_kinematics():
+    urdf_path = os.path.join(os.path.dirname(__file__), "models", "nero", "urdf", "nero_description.urdf")
+    try:
+        if os.path.exists(urdf_path):
+            chain = load_urdf_kinematics(urdf_path)
+            return JSONResponse(chain)
+        return JSONResponse({"error": "URDF not found", "path": urdf_path}, status_code=404)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 
 @app.websocket("/ws")
@@ -166,6 +182,8 @@ async def websocket_endpoint(websocket: WebSocket):
                     await websocket.send_text(json.dumps({
                         "type": "robot_changed",
                         "robot": {"id": robot.robot_id, "name": robot.name},
+                        "control": controller.status.to_dict(),
+                        "control_enabled": controller.enabled,
                     }))
 
                 elif action == "toggle_face":
@@ -231,6 +249,12 @@ async def websocket_endpoint(websocket: WebSocket):
                 pass
 
     recv_task = asyncio.create_task(handle_incoming())
+
+    await websocket.send_text(json.dumps({
+        "control": controller.status.to_dict(),
+        "control_enabled": controller.enabled,
+        "robot_status": True,
+    }))
 
     try:
         while True:

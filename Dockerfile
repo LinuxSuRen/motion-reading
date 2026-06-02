@@ -27,6 +27,8 @@ RUN unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY && \
 COPY server.py pose_engine.py ./
 COPY robot_arms/ robot_arms/
 COPY static/ static/
+COPY models/ models/
+COPY pose_landmarker_lite.task hand_landmarker.task face_landmarker.task ./
 
 EXPOSE 8000
 

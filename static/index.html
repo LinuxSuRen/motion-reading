@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Motion Reading - Arm Pose Dashboard</title>
+<script src="/static/vendor/three.min.js"></script>
 <style>
   /* ============================================
      DESIGN SYSTEM TOKENS
@@ -392,104 +393,7 @@
     opacity: 0.6;
   }
 
-  /* ============================================
-     HAND ANGLES — TWO-COLUMN
-     ============================================ */
-  .hands-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
-  }
 
-  .hand-card {
-    background: var(--bg-card);
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-md);
-    padding: 14px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    transition: border-color var(--transition-base);
-  }
-
-  .hand-card:hover {
-    border-color: var(--border-active);
-  }
-
-  .hand-card-title {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-primary);
-    padding-bottom: 6px;
-    border-bottom: 1px solid var(--border-subtle);
-    margin-bottom: 2px;
-  }
-
-  .finger-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 6px 8px;
-    border-radius: var(--radius-sm);
-    background: var(--bg-elevated);
-    gap: 8px;
-    transition: background var(--transition-base);
-  }
-
-  .finger-name {
-    font-size: 11px;
-    font-weight: 500;
-    color: var(--text-secondary);
-    text-transform: capitalize;
-    min-width: 48px;
-  }
-
-  .finger-status-group {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-shrink: 0;
-  }
-
-  .extension-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    transition: all var(--transition-base);
-    flex-shrink: 0;
-  }
-
-  .extension-dot.extended {
-    background: var(--accent-healthy);
-    box-shadow: 0 0 6px rgba(0, 212, 170, 0.5);
-  }
-
-  .extension-dot.not-extended {
-    background: #3a3a5a;
-    box-shadow: none;
-  }
-
-  .pip-value {
-    font-family: var(--font-mono);
-    font-size: 18px;
-    font-weight: 600;
-    min-width: 52px;
-    text-align: right;
-    transition: color var(--transition-base);
-  }
-
-  .pip-value .deg-symbol {
-    font-size: 11px;
-    opacity: 0.6;
-    font-weight: 400;
-  }
-
-  .no-data {
-    color: var(--text-muted);
-    font-family: var(--font-mono);
-    font-size: 16px;
-    font-weight: 600;
-  }
 
   /* ============================================
      FPS COUNTER — FOOTER
@@ -793,6 +697,25 @@
   .toggle-input:checked + .toggle-slider::before {
     transform: translateX(16px);
     background: white;
+  }
+
+  /* ============================================
+     3D ROBOT ARM VIEW
+     ============================================ */
+  .arm3d-container {
+    width: 100%;
+    height: 300px;
+    background: #0a0a14;
+    border: 2px solid #00d4aa;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    position: relative;
+  }
+
+  .arm3d-container canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
   }
 
   /* ============================================
@@ -1120,16 +1043,7 @@
       </div>
     </div>
 
-    <!-- Hand Angles -->
-    <div class="section-title" style="margin-top: 4px;">Hand Angles</div>
-    <div class="hands-grid">
-      <div class="hand-card" id="left-hand-card">
-        <div class="hand-card-title">Left Hand</div>
-      </div>
-      <div class="hand-card" id="right-hand-card">
-        <div class="hand-card-title">Right Hand</div>
-      </div>
-    </div>
+
 
     <!-- Face Expressions -->
     <div class="section-title face-section-header" style="margin-top: 8px; display: none;" id="face-header">
@@ -1179,6 +1093,13 @@
       <span>Roll <b id="face-roll">--</b></span>
       <span>Blink: <span id="face-blink">--</span></span>
     </div>
+    </div>
+
+    <!-- 3D Robot Arm -->
+    <div class="section-title" style="margin-top: 8px;" id="arm3d-title">3D Robot Arm</div>
+    <div class="arm3d-container" id="arm3d-container">
+      <canvas id="arm3d-canvas"></canvas>
+      <div id="arm3d-loading" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#555;font:13px monospace;">Loading 3D model...</div>
     </div>
 
     <!-- Robot Arm Joint Angles -->
@@ -1314,12 +1235,6 @@
     return HEALTHY;
   }
 
-  function getPipColor(angle) {
-    if (angle === null || angle === undefined) return MUTED;
-    if (angle < 100) return BORDERLINE;
-    return HEALTHY;
-  }
-
   // ────────────────────────────────────────────
   // GAUGE HELPERS
   // ────────────────────────────────────────────
@@ -1369,50 +1284,6 @@
   };
 
   // ────────────────────────────────────────────
-  // HAND TEMPLATES
-  // ────────────────────────────────────────────
-  const FINGER_NAMES = ['thumb', 'index', 'middle', 'ring', 'pinky'];
-
-  function buildHandCard(containerId) {
-    const container = document.getElementById(containerId);
-    // Clear existing (keep the title)
-    const title = container.querySelector('.hand-card-title');
-    container.innerHTML = '';
-    if (title) container.appendChild(title);
-
-    FINGER_NAMES.forEach(function(finger) {
-      const row = document.createElement('div');
-      row.className = 'finger-row';
-      row.id = containerId.replace('-card', '') + '-' + finger + '-row';
-
-      const nameSpan = document.createElement('span');
-      nameSpan.className = 'finger-name';
-      nameSpan.textContent = finger;
-
-      const statusGroup = document.createElement('span');
-      statusGroup.className = 'finger-status-group';
-
-      const dot = document.createElement('span');
-      dot.className = 'extension-dot not-extended';
-      dot.id = containerId.replace('-card', '') + '-' + finger + '-dot';
-
-      const pipSpan = document.createElement('span');
-      pipSpan.className = 'pip-value';
-      pipSpan.id = containerId.replace('-card', '') + '-' + finger + '-pip';
-      pipSpan.innerHTML = '--<span class="deg-symbol"></span>';
-
-      statusGroup.appendChild(dot);
-      statusGroup.appendChild(pipSpan);
-      row.appendChild(nameSpan);
-      row.appendChild(statusGroup);
-      container.appendChild(row);
-    });
-  }
-
-  buildHandCard('left-hand-card');
-  buildHandCard('right-hand-card');
-
-  // ────────────────────────────────────────────
   // UPDATE ANGLE DISPLAYS
   // ────────────────────────────────────────────
   function updateArmAngles(side, data) {
@@ -1438,49 +1309,11 @@
     });
   }
 
-  function updateHandData(side, data) {
-    if (!data) return;
-    const prefix = side + '_hand';
-
-    FINGER_NAMES.forEach(function(finger) {
-      const fingerData = data[finger];
-      if (!fingerData) return;
-
-      const dot = document.getElementById(prefix + '-' + finger + '-dot');
-      const pip = document.getElementById(prefix + '-' + finger + '-pip');
-      const extended = fingerData.extended;
-      const pipAngle = fingerData.pip_angle;
-
-      if (dot) {
-        if (extended === true) {
-          dot.className = 'extension-dot extended';
-        } else if (extended === false) {
-          dot.className = 'extension-dot not-extended';
-        } else {
-          dot.className = 'extension-dot not-extended';
-        }
-      }
-
-      if (pip) {
-        if (pipAngle !== null && pipAngle !== undefined) {
-          const color = getPipColor(pipAngle);
-          pip.style.color = color;
-          pip.innerHTML = Number(pipAngle).toFixed(1) + '<span class="deg-symbol">&deg;</span>';
-        } else {
-          pip.style.color = MUTED;
-          pip.innerHTML = '--<span class="deg-symbol"></span>';
-        }
-      }
-    });
-  }
-
   function updateAllAngles(angles) {
     if (!angles) return;
 
     updateArmAngles('left_arm', angles.left_arm);
     updateArmAngles('right_arm', angles.right_arm);
-    updateHandData('left', angles.left_hand);
-    updateHandData('right', angles.right_hand);
   }
 
   var ROBOT_JOINT_NAMES = ['j0', 'j1', 'j2', 'j3', 'j4', 'j5', 'j6'];
@@ -1668,18 +1501,6 @@
           gaugeEl.style.strokeDashoffset = '150.8';
           gaugeEl.style.stroke = MUTED;
           gaugeEl.style.filter = 'none';
-        }
-      });
-    });
-
-    ['left', 'right'].forEach(function(side) {
-      FINGER_NAMES.forEach(function(finger) {
-        var dot = document.getElementById(side + '_hand-' + finger + '-dot');
-        if (dot) dot.className = 'extension-dot not-extended';
-        var pip = document.getElementById(side + '_hand-' + finger + '-pip');
-        if (pip) {
-          pip.innerHTML = '--<span class="deg-symbol"></span>';
-          pip.style.color = MUTED;
         }
       });
     });
@@ -1979,13 +1800,23 @@
         var sel = document.getElementById('robot-selector');
         if (!sel) return;
         sel.innerHTML = '';
-        robots.forEach(function(rb) {
+
+        var urdfRobots = robots.filter(function(rb) { return rb.manufacturer === 'URDF'; });
+        if (urdfRobots.length === 0) {
+          var opt = document.createElement('option');
+          opt.value = '';
+          opt.textContent = 'No URDF robots';
+          sel.appendChild(opt);
+          return;
+        }
+
+        urdfRobots.forEach(function(rb) {
           var opt = document.createElement('option');
           opt.value = rb.id;
           opt.textContent = rb.manufacturer + ' ' + rb.model + ' (' + rb.dof + '-DOF)';
           sel.appendChild(opt);
         });
-        sel.value = 'nero7';
+        sel.value = urdfRobots[0].id;
 
         sel.addEventListener('change', function() {
           if (ws && ws.readyState === WebSocket.OPEN) {
@@ -1994,6 +1825,7 @@
               robot: sel.value
             }));
           }
+          showArm3D();
         });
       })
       .catch(function(err) {
@@ -2007,7 +1839,6 @@
   setConnectionStatus(false);
   initFaceToggle();
   fetchRobots();
-  connectWebSocket();
 
   // Handle window resize for canvas
   let resizeDebounce = null;
@@ -2030,6 +1861,286 @@
   });
 
   console.log('Motion Reading Dashboard initialized');
+
+  // ────────────────────────────────────────────
+  // 3D ROBOT ARM RENDERING (Three.js)
+  // ────────────────────────────────────────────
+  const arm3dCanvas = document.getElementById('arm3d-canvas');
+  const arm3dContainer = document.getElementById('arm3d-container');
+  let arm3dScene, arm3dCamera, arm3dRenderer;
+  let arm3dJointGroups = [];      // Three.js groups for each joint
+  let arm3dChainData = null;     // kinematic chain from API
+  let arm3dInitialized = false;
+
+  function initArm3D() {
+    if (arm3dInitialized) return true;
+    if (!arm3dCanvas || !arm3dContainer) {
+      arm3dError('Canvas or container element not found');
+      return false;
+    }
+    if (typeof THREE === 'undefined') {
+      arm3dError('Three.js library not loaded');
+      return false;
+    }
+
+    var w = arm3dContainer.clientWidth || 500;
+    var h = arm3dContainer.clientHeight || 300;
+
+    try {
+      arm3dScene = new THREE.Scene();
+
+      arm3dCamera = new THREE.PerspectiveCamera(45, w / h, 0.01, 10);
+      arm3dCamera.position.set(0.6, 0.5, 0.8);
+      arm3dCamera.lookAt(0, 0.15, 0);
+
+      arm3dRenderer = new THREE.WebGLRenderer({ canvas: arm3dCanvas, antialias: true, alpha: true });
+    } catch (e) {
+      arm3dError('WebGL init failed: ' + e.message);
+      return false;
+    }
+    arm3dRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    arm3dRenderer.setClearColor(0x0a0a14);
+    resizeArm3D();
+
+    // Lighting
+    arm3dScene.add(new THREE.AmbientLight(0x404060, 3));
+    var dirLight = new THREE.DirectionalLight(0xffffff, 2);
+    dirLight.position.set(1, 2, 1);
+    arm3dScene.add(dirLight);
+
+    // Grid
+    var grid = new THREE.GridHelper(0.8, 20, 0x252545, 0x181830);
+    arm3dScene.add(grid);
+
+    // Ground plane
+    var planeGeo = new THREE.PlaneGeometry(0.8, 0.8);
+    var planeMat = new THREE.MeshStandardMaterial({ color: 0x111122, side: THREE.DoubleSide, transparent: true, opacity: 0.5 });
+    var plane = new THREE.Mesh(planeGeo, planeMat);
+    plane.rotation.x = -Math.PI / 2;
+    plane.position.y = -0.02;
+    arm3dScene.add(plane);
+
+    // Debug axes: X=red, Y=green, Z=blue
+    var axLen = 0.2;
+    var xAxis = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(axLen,0,0)]),
+      new THREE.LineBasicMaterial({ color: 0xff0000 })
+    );
+    var yAxis = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,axLen,0)]),
+      new THREE.LineBasicMaterial({ color: 0x00ff00 })
+    );
+    var zAxis = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,axLen)]),
+      new THREE.LineBasicMaterial({ color: 0x0000ff })
+    );
+    arm3dScene.add(xAxis); arm3dScene.add(yAxis); arm3dScene.add(zAxis);
+
+    arm3dInitialized = true;
+
+    // Mouse drag rotation
+    var isDragging = false, prevX = 0, prevY = 0;
+    var rotY = 0, rotX = 0.3;
+    arm3dCanvas.addEventListener('mousedown', function(e) {
+      isDragging = true;
+      prevX = e.clientX; prevY = e.clientY;
+    });
+    window.addEventListener('mouseup', function() { isDragging = false; });
+    window.addEventListener('mousemove', function(e) {
+      if (!isDragging) return;
+      rotY += (e.clientX - prevX) * 0.01;
+      rotX += (e.clientY - prevY) * 0.01;
+      rotX = Math.max(-1.2, Math.min(1.2, rotX));
+      prevX = e.clientX; prevY = e.clientY;
+    });
+
+    // Wheel zoom
+    var zoom = 1;
+    arm3dCanvas.addEventListener('wheel', function(e) {
+      e.preventDefault();
+      zoom = Math.max(0.3, Math.min(3, zoom - e.deltaY * 0.001));
+    }, { passive: false });
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      var dist = 1.0 * zoom;
+      arm3dCamera.position.x = dist * Math.sin(rotY) * Math.cos(rotX);
+      arm3dCamera.position.y = dist * Math.sin(rotX) + 0.15;
+      arm3dCamera.position.z = dist * Math.cos(rotY) * Math.cos(rotX);
+      arm3dCamera.lookAt(0, 0.15, 0);
+
+      arm3dRenderer.render(arm3dScene, arm3dCamera);
+    }
+    animate();
+    return true;
+  }
+
+  function resizeArm3D() {
+    if (!arm3dRenderer || !arm3dContainer) return;
+    var w = arm3dContainer.clientWidth;
+    var h = arm3dContainer.clientHeight;
+    if (w > 0 && h > 0) {
+      arm3dRenderer.setSize(w, h);
+      arm3dCamera.aspect = w / h;
+      arm3dCamera.updateProjectionMatrix();
+    }
+  }
+
+  function buildArm3D(chain) {
+    if (!arm3dInitialized || !chain || chain.length === 0) return;
+
+    var loading = document.getElementById('arm3d-loading');
+    if (loading) loading.style.display = 'none';
+
+    arm3dJointGroups.forEach(function(g) { if (g.parent) g.parent.remove(g); });
+    arm3dJointGroups = [];
+    while (arm3dScene.children.length > 5) {
+      arm3dScene.remove(arm3dScene.children[arm3dScene.children.length - 1]);
+    }
+
+    var baseGeo = new THREE.CylinderGeometry(0.05, 0.07, 0.04, 16);
+    var baseMat = new THREE.MeshStandardMaterial({ color: 0x3a3a6a, metalness: 0.6, roughness: 0.3, emissive: 0x111133, emissiveIntensity: 0.2 });
+    var base = new THREE.Mesh(baseGeo, baseMat);
+    base.position.y = 0.02;
+    arm3dScene.add(base);
+
+    var rootGroup = new THREE.Group();
+    arm3dScene.add(rootGroup);
+    var parent = rootGroup;
+
+    chain.forEach(function(joint, idx) {
+      var origin = joint.origin_xyz;
+      var rpy = joint.origin_rpy;
+      // URDF (X=fwd,Y=left,Z=up) → Three.js (X,Y=up,Z)
+      var pos = new THREE.Vector3(origin[0], origin[2], origin[1]);
+
+      var jointGeo = new THREE.SphereGeometry(0.015, 16, 16);
+      var jointMat = new THREE.MeshStandardMaterial({ color: 0x00d4aa, metalness: 0.4, roughness: 0.2, emissive: 0x003322, emissiveIntensity: 0.5 });
+      var jointSphere = new THREE.Mesh(jointGeo, jointMat);
+
+      var rotGroup = new THREE.Group();
+      rotGroup.add(jointSphere);
+      rotGroup.userData = { jointIndex: idx };
+
+      var originGroup = new THREE.Group();
+      originGroup.position.copy(pos);
+      // URDF RPY (extrinsic XYZ = fixed-axis roll,pitch,yaw) mapped to Three.js axes
+      // URDF X→X, URDF Y→Z, URDF Z→Y:  R = Ry_threejs(yaw) * Rz_threejs(pitch) * Rx_threejs(roll)
+      var q = new THREE.Quaternion();
+      var qx = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), rpy[0]);
+      var qy = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), rpy[2]);
+      var qz = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), rpy[1]);
+      q.multiply(qy).multiply(qz).multiply(qx);
+      originGroup.quaternion.copy(q);
+
+      // Link from parent zero to this origin
+      if (pos.length() > 0.001) {
+        var len = pos.length();
+        var linkGeo = new THREE.CylinderGeometry(0.012, 0.012, len, 8);
+        var linkMat = new THREE.MeshStandardMaterial({ color: 0x4da6ff, metalness: 0.7, roughness: 0.2, emissive: 0x001122, emissiveIntensity: 0.3 });
+        var link = new THREE.Mesh(linkGeo, linkMat);
+        link.position.copy(pos.clone().multiplyScalar(0.5));
+        link.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), pos.clone().normalize());
+        parent.add(link);
+      }
+
+      parent.add(originGroup);
+      originGroup.add(rotGroup);
+
+      arm3dJointGroups.push(rotGroup);
+      parent = rotGroup;
+    });
+
+    arm3dChainData = chain;
+  }
+
+  function updateArm3DJoints(robotData) {
+    if (!arm3dInitialized || !arm3dChainData || !robotData) return;
+
+    var sideData = robotData.right || robotData.left || {};
+    var joints = sideData.joints || {};
+    var jointNames = Object.keys(joints).sort();
+
+    arm3dJointGroups.forEach(function(group, idx) {
+      var angleDeg = 0;
+      if (idx < jointNames.length) {
+        angleDeg = joints[jointNames[idx]] || 0;
+      }
+      var angleRad = angleDeg * Math.PI / 180;
+      group.quaternion.setFromAxisAngle(new THREE.Vector3(0, 0, 1), angleRad);
+    });
+  }
+
+  // Fetch kinematics and build model
+  function arm3dError(msg) {
+    var loading = document.getElementById('arm3d-loading');
+    if (loading) {
+      loading.textContent = 'Error: ' + msg;
+      loading.style.color = '#ff4444';
+    }
+    console.error('Arm3D:', msg);
+  }
+
+  function fetchAndBuildArm3D() {
+    var loading = document.getElementById('arm3d-loading');
+    if (loading) loading.textContent = 'Fetching URDF kinematics...';
+
+    fetch('/api/urdf/kinematics')
+      .then(function(r) {
+        if (!r.ok) {
+          return r.json().then(function(e) { throw new Error(e.error || 'HTTP ' + r.status); });
+        }
+        return r.json();
+      })
+      .then(function(chain) {
+        if (!chain || !Array.isArray(chain) || chain.length === 0) {
+          throw new Error('No joints found in URDF');
+        }
+        if (loading) loading.textContent = 'Building 3D model (' + chain.length + ' joints)...';
+        initArm3D();
+        if (!arm3dInitialized) {
+          throw new Error('WebGL init failed - check browser console');
+        }
+        buildArm3D(chain);
+        updateArm3DJoints(lastRobotData);
+      })
+      .catch(function(err) {
+        arm3dError(err.message || 'Unknown error');
+      });
+  }
+
+  function showArm3D() {
+    var title = document.getElementById('arm3d-title');
+    var container = document.getElementById('arm3d-container');
+    if (!container) return;
+    var ok = initArm3D();
+    if (ok) resizeArm3D();
+    if (title) title.style.display = 'block';
+    container.style.display = 'block';
+  }
+
+  var lastRobotData = null;
+  var lastControlEnabled = false;
+
+  // Intercept robot data for 3D updates
+  var _originalUpdateRobotData = updateRobotData;
+  updateRobotData = function(robotData) {
+    lastRobotData = robotData;
+    _originalUpdateRobotData(robotData);
+    updateArm3DJoints(robotData);
+  };
+
+  // Intercept control status for 3D visibility
+  var _originalUpdateControlStatus = updateControlStatus;
+  updateControlStatus = function(control, enabled) {
+    lastControlEnabled = enabled;
+    _originalUpdateControlStatus(control, enabled);
+    showArm3D();
+  };
+
+  fetchAndBuildArm3D();
+  connectWebSocket();
 })();
 </script>
 

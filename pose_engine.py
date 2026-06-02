@@ -1,15 +1,14 @@
+import os
 import threading
 import time
 import numpy as np
 import cv2
 import mediapipe as mp
 
-mp_drawing = mp.solutions.drawing_utils
-mp_drawing_styles = mp.solutions.drawing_styles
+vision = mp.tasks.vision
 
 
 def calc_angle(a, b, c):
-    """Angle at point b, formed by a-b-c. Returns degrees."""
     a, b, c = np.array(a), np.array(b), np.array(c)
     ba = a - b
     bc = c - b
@@ -17,10 +16,12 @@ def calc_angle(a, b, c):
     return np.degrees(np.arccos(np.clip(cosine, -1.0, 1.0)))
 
 
-class PoseEngine:
-    """Real-time pose and hand angle computation using MediaPipe."""
+def _model_path(name):
+    return os.path.join(os.path.dirname(__file__), name)
 
-    # Pose landmark indices
+
+class PoseEngine:
+
     LEFT_SHOULDER = 11
     RIGHT_SHOULDER = 12
     LEFT_ELBOW = 13
@@ -30,7 +31,6 @@ class PoseEngine:
     LEFT_HIP = 23
     RIGHT_HIP = 24
 
-    # Hand landmark indices
     WRIST = 0
     THUMB_CMC = 1
     THUMB_MCP = 2
@@ -57,27 +57,40 @@ class PoseEngine:
         self.camera_id = camera_id
         self.max_width = max_width
 
-        self.pose = mp.solutions.pose.Pose(
-            static_image_mode=False,
-            model_complexity=1,
-            smooth_landmarks=True,
-            min_detection_confidence=0.7,
+        pose_options = vision.PoseLandmarkerOptions(
+            base_options=mp.tasks.BaseOptions(
+                model_asset_path=_model_path("pose_landmarker_lite.task")
+            ),
+            running_mode=vision.RunningMode.IMAGE,
+            num_poses=1,
+            min_pose_detection_confidence=0.7,
             min_tracking_confidence=0.6,
         )
-        self.hands = mp.solutions.hands.Hands(
-            static_image_mode=False,
-            max_num_hands=2,
-            model_complexity=1,
-            min_detection_confidence=0.5,
+        self.pose = vision.PoseLandmarker.create_from_options(pose_options)
+
+        hand_options = vision.HandLandmarkerOptions(
+            base_options=mp.tasks.BaseOptions(
+                model_asset_path=_model_path("hand_landmarker.task")
+            ),
+            running_mode=vision.RunningMode.IMAGE,
+            num_hands=2,
+            min_hand_detection_confidence=0.5,
             min_tracking_confidence=0.5,
         )
-        self.face_mesh = mp.solutions.face_mesh.FaceMesh(
-            static_image_mode=False,
-            max_num_faces=1,
-            refine_landmarks=True,
-            min_detection_confidence=0.5,
+        self.hands = vision.HandLandmarker.create_from_options(hand_options)
+
+        face_options = vision.FaceLandmarkerOptions(
+            base_options=mp.tasks.BaseOptions(
+                model_asset_path=_model_path("face_landmarker.task")
+            ),
+            running_mode=vision.RunningMode.IMAGE,
+            num_faces=1,
+            output_face_blendshapes=False,
+            output_facial_transformation_matrixes=False,
+            min_face_detection_confidence=0.5,
             min_tracking_confidence=0.5,
         )
+        self.face_mesh = vision.FaceLandmarker.create_from_options(face_options)
 
         self._lock = threading.Lock()
         self._running = False
@@ -86,12 +99,11 @@ class PoseEngine:
         self._thread = None
         self.face_enabled = False
 
-        self._pose_style = mp_drawing_styles.get_default_pose_landmarks_style()
-        self._hand_style = mp_drawing_styles.get_default_hand_landmarks_style()
-        self._hand_connections = mp_drawing_styles.get_default_hand_connections_style()
+        self._pose_style = vision.drawing_styles.get_default_pose_landmarks_style()
+        self._hand_style = vision.drawing_styles.get_default_hand_landmarks_style()
+        self._hand_connections = vision.drawing_styles.get_default_hand_connections_style()
 
     def start(self):
-        """Start background camera capture and processing thread."""
         if self._running:
             return
         self._running = True
@@ -99,7 +111,6 @@ class PoseEngine:
         self._thread.start()
 
     def _capture_loop(self):
-        """Continuously capture frames from camera and process through MediaPipe."""
         cap = cv2.VideoCapture(self.camera_id)
         if not cap.isOpened():
             self._running = False
@@ -112,19 +123,17 @@ class PoseEngine:
                     time.sleep(0.01)
                     continue
 
-                # Resize to max width while maintaining aspect ratio
                 h, w = frame.shape[:2]
                 if w > self.max_width:
                     scale = self.max_width / w
                     frame = cv2.resize(frame, (self.max_width, int(h * scale)))
 
-                # Process through MediaPipe pipeline
                 rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                rgb.flags.writeable = False
-                pose_result = self.pose.process(rgb)
-                hands_result = self.hands.process(rgb)
-                face_result = self.face_mesh.process(rgb) if self.face_enabled else None
-                rgb.flags.writeable = True
+                mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+
+                pose_result = self.pose.detect(mp_image)
+                hands_result = self.hands.detect(mp_image)
+                face_result = self.face_mesh.detect(mp_image) if self.face_enabled else None
 
                 angles = self._compute_angles_from_results(
                     frame, pose_result, hands_result, face_result
@@ -143,30 +152,31 @@ class PoseEngine:
             return None
 
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        rgb.flags.writeable = False
-        pose_result = self.pose.process(rgb)
-        hands_result = self.hands.process(rgb)
-        face_result = self.face_mesh.process(rgb) if self.face_enabled else None
-        rgb.flags.writeable = True
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+
+        pose_result = self.pose.detect(mp_image)
+        hands_result = self.hands.detect(mp_image)
+        face_result = self.face_mesh.detect(mp_image) if self.face_enabled else None
 
         return self._compute_angles_from_results(frame, pose_result, hands_result, face_result)
 
     def _compute_angles_from_results(
         self, frame: np.ndarray, pose_result, hands_result, face_result
     ) -> dict | None:
-        if pose_result.pose_landmarks is None:
+        if not pose_result.pose_landmarks:
             return None
 
-        if not self._torso_visible(pose_result.pose_landmarks):
+        pose_lms = pose_result.pose_landmarks[0]
+        pose_world_lms = pose_result.pose_world_landmarks[0] if pose_result.pose_world_landmarks else None
+
+        if not self._torso_visible(pose_lms):
             return None
 
-        # Prefer 3D world landmarks when available, fall back to 2D image landmarks
-        use_world = pose_result.pose_world_landmarks is not None
-        landmarks = pose_result.pose_world_landmarks if use_world else pose_result.pose_landmarks
+        use_world = pose_world_lms is not None
+        landmarks = pose_world_lms if use_world else pose_lms
 
-        # Compute arm angles with per-arm visibility check
-        left_arm = self._compute_arm_angles(landmarks, pose_result.pose_landmarks, "left")
-        right_arm = self._compute_arm_angles(landmarks, pose_result.pose_landmarks, "right")
+        left_arm = self._compute_arm_angles(landmarks, pose_lms, "left")
+        right_arm = self._compute_arm_angles(landmarks, pose_lms, "right")
 
         if not left_arm and not right_arm:
             return None
@@ -179,25 +189,25 @@ class PoseEngine:
         left_world = None
         right_world = None
 
-        if hands_result.multi_hand_landmarks and hands_result.multi_handedness:
-            for i, handedness in enumerate(hands_result.multi_handedness):
-                label = handedness.classification[0].label
+        if hands_result.hand_landmarks and hands_result.handedness:
+            for i, handedness in enumerate(hands_result.handedness):
+                label = handedness[0].category_name
                 if label == "Left":
-                    person_left = hands_result.multi_hand_landmarks[i]
-                    if hands_result.multi_hand_world_landmarks:
-                        left_world = hands_result.multi_hand_world_landmarks[i]
+                    person_left = hands_result.hand_landmarks[i]
+                    if hands_result.hand_world_landmarks:
+                        left_world = hands_result.hand_world_landmarks[i]
                 elif label == "Right":
-                    person_right = hands_result.multi_hand_landmarks[i]
-                    if hands_result.multi_hand_world_landmarks:
-                        right_world = hands_result.multi_hand_world_landmarks[i]
+                    person_right = hands_result.hand_landmarks[i]
+                    if hands_result.hand_world_landmarks:
+                        right_world = hands_result.hand_world_landmarks[i]
 
         if person_left is not None:
             right_arm["wrist"] = self._compute_wrist_angle(
-                pose_result.pose_landmarks, person_left, "right"
+                pose_lms, person_left, "right"
             )
         if person_right is not None:
             left_arm["wrist"] = self._compute_wrist_angle(
-                pose_result.pose_landmarks, person_right, "left"
+                pose_lms, person_right, "left"
             )
 
         right_hand = (
@@ -216,40 +226,41 @@ class PoseEngine:
 
         face = self._compute_face_expressions(face_result)
 
-        return {
-            "left_arm": left_arm,
-            "right_arm": right_arm,
-            "left_hand": left_hand,
-            "right_hand": right_hand,
-            "left_vectors": left_vectors,
-            "right_vectors": right_vectors,
-            "face": face,
-        }
+        result = {}
+        if left_arm:
+            result["left_arm"] = left_arm
+        if right_arm:
+            result["right_arm"] = right_arm
+        if left_hand:
+            result["left_hand"] = left_hand
+        if right_hand:
+            result["right_hand"] = right_hand
+        result["left_vectors"] = left_vectors
+        result["right_vectors"] = right_vectors
+        result["face"] = face
+        return result
 
     def _draw_overlays(self, frame, angles, pose_result, hands_result, face_result=None):
         h, w = frame.shape[:2]
 
-        # ---- Draw pose skeleton ----
         if pose_result.pose_landmarks:
-            mp_drawing.draw_landmarks(
+            vision.drawing_utils.draw_landmarks(
                 frame,
-                pose_result.pose_landmarks,
-                mp.solutions.pose.POSE_CONNECTIONS,
+                pose_result.pose_landmarks[0],
+                vision.PoseLandmarksConnections.POSE_LANDMARKS,
                 landmark_drawing_spec=self._pose_style,
             )
 
-        # ---- Draw hand skeletons ----
-        if hands_result and hands_result.multi_hand_landmarks:
-            for hand_lm in hands_result.multi_hand_landmarks:
-                mp_drawing.draw_landmarks(
+        if hands_result and hands_result.hand_landmarks:
+            for hand_lm in hands_result.hand_landmarks:
+                vision.drawing_utils.draw_landmarks(
                     frame,
                     hand_lm,
-                    mp.solutions.hands.HAND_CONNECTIONS,
+                    vision.HandLandmarksConnections.HAND_CONNECTIONS,
                     landmark_drawing_spec=self._hand_style,
                     connection_drawing_spec=self._hand_connections,
                 )
 
-        # ---- Draw angle text at joints ----
         font = cv2.FONT_HERSHEY_SIMPLEX
         font_scale = 0.45
         thickness = 1
@@ -271,9 +282,8 @@ class PoseEngine:
                 return (0, 200, 255)
             return (0, 255, 0)
 
-        # Arm angle labels
         if pose_result.pose_landmarks and angles:
-            pl = pose_result.pose_landmarks.landmark
+            pl = pose_result.pose_landmarks[0]
             for side, shoulder_idx, elbow_idx, wrist_idx in [
                 ("L", self.LEFT_SHOULDER, self.LEFT_ELBOW, self.LEFT_WRIST),
                 ("R", self.RIGHT_SHOULDER, self.RIGHT_ELBOW, self.RIGHT_WRIST),
@@ -298,17 +308,16 @@ class PoseEngine:
                     _draw_label(wx + 14, wy, f"{side}W:{wrist_angle:.0f}",
                                 _angle_color(wrist_angle, 130, 150))
 
-        # ---- Hand finger labels ----
-        if hands_result and hands_result.multi_hand_landmarks and hands_result.multi_handedness and angles:
+        if hands_result and hands_result.hand_landmarks and hands_result.handedness and angles:
             finger_names = ["thumb", "index", "middle", "ring", "pinky"]
             finger_tips = [self.THUMB_TIP, self.INDEX_TIP, self.MIDDLE_TIP,
                            self.RING_TIP, self.PINKY_TIP]
             finger_pips = [None, self.INDEX_PIP, self.MIDDLE_PIP,
                            self.RING_PIP, self.PINKY_PIP]
 
-            for i, handedness in enumerate(hands_result.multi_handedness):
-                hand_lm = hands_result.multi_hand_landmarks[i]
-                side_label = "L" if handedness.classification[0].label == "Left" else "R"
+            for i, handedness in enumerate(hands_result.handedness):
+                hand_lm = hands_result.hand_landmarks[i]
+                side_label = "L" if handedness[0].category_name == "Left" else "R"
                 hand_key = f"{'right' if side_label == 'L' else 'left'}_hand"
                 hand_data = angles.get(hand_key) or {}
 
@@ -317,47 +326,45 @@ class PoseEngine:
                     extended = finger_data.get("extended")
                     pip_angle = finger_data.get("pip_angle")
 
-                    tx, ty = _px(hand_lm.landmark[tip_idx])
+                    tx, ty = _px(hand_lm[tip_idx])
                     dot_color = (0, 255, 0) if extended else (80, 80, 80)
                     cv2.circle(frame, (tx, ty), 5, dot_color, -1)
                     cv2.circle(frame, (tx, ty), 6, (255, 255, 255), 1)
 
                     if pip_idx is not None and pip_angle is not None:
-                        px, py = _px(hand_lm.landmark[pip_idx])
+                        px, py = _px(hand_lm[pip_idx])
                         _draw_label(px + 10, py - 4, f"{pip_angle:.0f}",
                                     _angle_color(pip_angle, 100, 140))
 
-        # ---- Draw face mesh (lightweight, contours only) ----
-        if face_result and face_result.multi_face_landmarks:
-            face_lm = face_result.multi_face_landmarks[0]
-            face_style = mp_drawing.DrawingSpec(color=(200, 200, 255), thickness=1, circle_radius=1)
-            mp_drawing.draw_landmarks(
-                frame, face_lm, mp.solutions.face_mesh.FACEMESH_CONTOURS,
+        if face_result and face_result.face_landmarks:
+            face_lm = face_result.face_landmarks[0]
+            face_style = vision.drawing_utils.DrawingSpec(color=(200, 200, 255), thickness=1, circle_radius=1)
+            vision.drawing_utils.draw_landmarks(
+                frame, face_lm, vision.FaceLandmarksConnections.FACE_LANDMARKS_CONTOURS,
                 landmark_drawing_spec=face_style, connection_drawing_spec=face_style,
             )
 
-            flm = face_lm.landmark
+            flm = face_lm
             h, w = frame.shape[:2]
             cx, cy = int(flm[1].x * w), int(flm[1].y * h)
             _draw_label(cx + 10, cy, "FACE", (200, 200, 255))
 
     def _torso_visible(self, pose_landmarks) -> bool:
-        landmarks = pose_landmarks.landmark
         key_points = [
             self.LEFT_SHOULDER, self.RIGHT_SHOULDER,
             self.LEFT_ELBOW, self.RIGHT_ELBOW,
         ]
         visible_count = sum(
             1 for idx in key_points
-            if landmarks[idx].visibility >= 0.5
+            if hasattr(pose_landmarks[idx], 'visibility') and pose_landmarks[idx].visibility >= 0.5
         )
         return visible_count >= 2
 
     def _compute_face_expressions(self, face_result) -> dict | None:
-        if face_result is None or face_result.multi_face_landmarks is None:
+        if face_result is None or not face_result.face_landmarks:
             return None
 
-        lm = face_result.multi_face_landmarks[0].landmark
+        lm = face_result.face_landmarks[0]
 
         def _d(i, j):
             a, b = lm[i], lm[j]
@@ -411,9 +418,9 @@ class PoseEngine:
             sh, el, wr = self.RIGHT_SHOULDER, self.RIGHT_ELBOW, self.RIGHT_WRIST
 
         return {
-            "shoulder": list(self._xyz(landmarks.landmark[sh])),
-            "elbow": list(self._xyz(landmarks.landmark[el])),
-            "wrist": list(self._xyz(landmarks.landmark[wr])),
+            "shoulder": list(self._xyz(landmarks[sh])),
+            "elbow": list(self._xyz(landmarks[el])),
+            "wrist": list(self._xyz(landmarks[wr])),
         }
 
     def _compute_arm_angles(self, landmarks, image_landmarks, side):
@@ -422,11 +429,11 @@ class PoseEngine:
         else:
             shoulder, elbow, wrist = self.RIGHT_SHOULDER, self.RIGHT_ELBOW, self.RIGHT_WRIST
 
-        if image_landmarks:
+        if hasattr(image_landmarks[shoulder], 'visibility'):
             key_vis = [
-                image_landmarks.landmark[shoulder].visibility,
-                image_landmarks.landmark[elbow].visibility,
-                image_landmarks.landmark[wrist].visibility,
+                image_landmarks[shoulder].visibility,
+                image_landmarks[elbow].visibility,
+                image_landmarks[wrist].visibility,
             ]
             if key_vis[0] < 0.5:
                 return None
@@ -434,14 +441,14 @@ class PoseEngine:
                 return None
 
         elbow_angle = calc_angle(
-            self._xyz(landmarks.landmark[shoulder]),
-            self._xyz(landmarks.landmark[elbow]),
-            self._xyz(landmarks.landmark[wrist]),
+            self._xyz(landmarks[shoulder]),
+            self._xyz(landmarks[elbow]),
+            self._xyz(landmarks[wrist]),
         )
         shoulder_angle = calc_angle(
-            self._xyz(landmarks.landmark[self.LEFT_HIP if side == "left" else self.RIGHT_HIP]),
-            self._xyz(landmarks.landmark[shoulder]),
-            self._xyz(landmarks.landmark[elbow]),
+            self._xyz(landmarks[self.LEFT_HIP if side == "left" else self.RIGHT_HIP]),
+            self._xyz(landmarks[shoulder]),
+            self._xyz(landmarks[elbow]),
         )
         return {
             "elbow": round(elbow_angle, 1),
@@ -449,15 +456,14 @@ class PoseEngine:
         }
 
     def _compute_wrist_angle(self, pose_landmarks, hand_landmarks, side):
-        """Compute wrist angle from pose elbow/wrist + hand index MCP in image space."""
         if side == "left":
-            elbow = pose_landmarks.landmark[self.LEFT_ELBOW]
-            wrist = pose_landmarks.landmark[self.LEFT_WRIST]
+            elbow = pose_landmarks[self.LEFT_ELBOW]
+            wrist = pose_landmarks[self.LEFT_WRIST]
         else:
-            elbow = pose_landmarks.landmark[self.RIGHT_ELBOW]
-            wrist = pose_landmarks.landmark[self.RIGHT_WRIST]
+            elbow = pose_landmarks[self.RIGHT_ELBOW]
+            wrist = pose_landmarks[self.RIGHT_WRIST]
 
-        index_mcp = hand_landmarks.landmark[self.INDEX_MCP]
+        index_mcp = hand_landmarks[self.INDEX_MCP]
 
         return round(
             calc_angle(
@@ -469,20 +475,13 @@ class PoseEngine:
         )
 
     def _compute_hand_fingers(self, hand_landmarks, hand_world_landmarks, side):
-        """Compute finger extension states and PIP joint angles for one hand.
-        
-        Uses 3D world landmarks for angles when available, 2D image landmarks as fallback.
-        Extension heuristic: for index/middle/ring/pinky, tip.y < pip.y (tip above PIP).
-        For thumb, compare x coordinates based on hand side.
-        """
         lm = hand_world_landmarks if hand_world_landmarks else hand_landmarks
-        image_lm = hand_landmarks  # used for extension heuristic (needs image coords)
+        image_lm = hand_landmarks
 
         result = {}
 
-        # Thumb: no PIP joint; extension uses x-axis comparison
-        thumb_tip = image_lm.landmark[self.THUMB_TIP]
-        thumb_ip = image_lm.landmark[self.THUMB_IP]
+        thumb_tip = image_lm[self.THUMB_TIP]
+        thumb_ip = image_lm[self.THUMB_IP]
         if side == "Left":
             thumb_extended = (thumb_tip.x - thumb_ip.x) > 0.04
         else:
@@ -490,7 +489,6 @@ class PoseEngine:
 
         result["thumb"] = {"extended": thumb_extended}
 
-        # Index, Middle, Ring, Pinky: PIP angle + extension
         finger_configs = [
             ("index", self.INDEX_MCP, self.INDEX_PIP, self.INDEX_DIP, self.INDEX_TIP),
             ("middle", self.MIDDLE_MCP, self.MIDDLE_PIP, self.MIDDLE_DIP, self.MIDDLE_TIP),
@@ -499,14 +497,12 @@ class PoseEngine:
         ]
 
         for name, mcp_idx, pip_idx, dip_idx, tip_idx in finger_configs:
-            # Extension: fingertip is above PIP joint (smaller y in image coordinates)
-            extended = image_lm.landmark[tip_idx].y < image_lm.landmark[pip_idx].y
+            extended = image_lm[tip_idx].y < image_lm[pip_idx].y
 
-            # PIP angle: angle at PIP joint formed by MCP-PIP-DIP
             pip_angle = calc_angle(
-                self._xyz(lm.landmark[mcp_idx]),
-                self._xyz(lm.landmark[pip_idx]),
-                self._xyz(lm.landmark[dip_idx]),
+                self._xyz(lm[mcp_idx]),
+                self._xyz(lm[pip_idx]),
+                self._xyz(lm[dip_idx]),
             )
 
             result[name] = {
@@ -518,20 +514,13 @@ class PoseEngine:
 
     @staticmethod
     def _xyz(landmark):
-        """Extract (x, y, z) tuple from a MediaPipe landmark."""
         return (landmark.x, landmark.y, landmark.z)
 
     def get_latest(self):
-        """Thread-safe access to latest frame and angles.
-        
-        Returns:
-            Tuple of (frame: np.ndarray | None, angles: dict | None)
-        """
         with self._lock:
             return self._frame, self._angles
 
     def stop(self):
-        """Stop capture thread and release MediaPipe resources."""
         self._running = False
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=3.0)

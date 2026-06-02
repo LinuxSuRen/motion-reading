@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>3D Arm Test</title>
+<script type="importmap">{"imports":{"three":"/static/vendor/three.module.js"}}</script>
+<style>
+body{margin:0;background:#111;color:#fff;font:13px monospace}
+#info{padding:8px;border-bottom:1px solid #333}
+#container{width:100%;height:400px}
+</style></head><body>
+<div id="info">Loading...</div>
+<div id="container"><canvas id="c"></canvas></div>
+
+<script type="module">
+import * as THREE from 'three';
+
+const info = document.getElementById('info');
+function log(msg) { info.textContent += ' | ' + msg; }
+function err(msg) { info.textContent += ' | ERROR: ' + msg; info.style.color = 'red'; }
+
+log('module loaded');
+if (typeof THREE === 'undefined') { err('THREE undefined'); throw new Error('THREE'); }
+log('THREE OK');
+
+const container = document.getElementById('container');
+const canvas = document.getElementById('c');
+const w = container.clientWidth;
+const h = container.clientHeight;
+log('container ' + w + 'x' + h);
+
+if (w === 0 || h === 0) { err('container has 0 size'); }
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45, w/h || 1, 0.01, 10);
+camera.position.set(0.6, 0.5, 0.8);
+camera.lookAt(0, 0.15, 0);
+
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(w, h || 300);
+renderer.setClearColor(0x0a0a14);
+log('renderer created');
+
+scene.add(new THREE.AmbientLight(0x404060, 3));
+const dl = new THREE.DirectionalLight(0xffffff, 2);
+dl.position.set(1, 2, 1);
+scene.add(dl);
+scene.add(new THREE.GridHelper(0.8, 20, 0x252545, 0x181830));
+
+// Fetch kinematics and build
+log('fetching kinematics...');
+try {
+  const resp = await fetch('/api/urdf/kinematics');
+  const chain = await resp.json();
+  log('got ' + chain.length + ' joints');
+  
+  // Base
+  const base = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.05, 0.07, 0.04, 16),
+    new THREE.MeshStandardMaterial({ color: 0x3a3a6a, metalness: 0.6, roughness: 0.3, emissive: 0x111133, emissiveIntensity: 0.2 })
+  );
+  base.position.y = 0.02;
+  scene.add(base);
+  
+  const rootGroup = new THREE.Group();
+  scene.add(rootGroup);
+  let parent = rootGroup;
+  const groups = [];
+  
+  for (let i = 0; i < chain.length; i++) {
+    const joint = chain[i];
+    const ox = joint.origin_xyz[0];  // URDF X
+    const oy = joint.origin_xyz[1];  // URDF Y → Three.js Z
+    const oz = joint.origin_xyz[2];  // URDF Z → Three.js Y
+    const r = joint.origin_rpy[0];   // roll
+    const p = joint.origin_rpy[1];   // pitch
+    const y = joint.origin_rpy[2];   // yaw
+    
+    const pos = new THREE.Vector3(ox, oz, oy);
+    
+    // Joint sphere
+    const sphere = new THREE.Mesh(
+      new THREE.SphereGeometry(0.015, 16, 16),
+      new THREE.MeshStandardMaterial({ color: 0x00d4aa, emissive: 0x003322, emissiveIntensity: 0.5 })
+    );
+    
+    const rotGroup = new THREE.Group();
+    rotGroup.add(sphere);
+    rotGroup.userData = { jointIndex: i };
+    
+    const originGroup = new THREE.Group();
+    originGroup.position.copy(pos);
+    // RPY: extrinsic XYZ → Three.js Ry(yaw) * Rz(pitch) * Rx(roll)
+    const q = new THREE.Quaternion();
+    const qx = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0), r);
+    const qy = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), y);
+    const qz = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,0,1), p);
+    q.multiply(qy).multiply(qz).multiply(qx);
+    originGroup.quaternion.copy(q);
+    
+    // Link cylinder from parent zero to this origin
+    const len = pos.length();
+    if (len > 0.001) {
+      const linkGeo = new THREE.CylinderGeometry(0.012, 0.012, len, 8);
+      const linkMat = new THREE.MeshStandardMaterial({ color: 0x4da6ff, metalness: 0.7, roughness: 0.2, emissive: 0x001122, emissiveIntensity: 0.3 });
+      const link = new THREE.Mesh(linkGeo, linkMat);
+      link.position.copy(pos.clone().multiplyScalar(0.5));
+      link.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), pos.clone().normalize());
+      parent.add(link);
+    }
+    
+    parent.add(originGroup);
+    originGroup.add(rotGroup);
+    groups.push(rotGroup);
+    parent = rotGroup;
+  }
+  
+  log('model built, ' + groups.length + ' joint groups');
+  
+  // Rotate joint 3 by 45 deg to verify animation
+  if (groups.length > 2) {
+    const a = 45 * Math.PI / 180;
+    groups[2].quaternion.setFromAxisAngle(new THREE.Vector3(0, 0, 1), a);
+    log('joint3 rotated 45deg');
+  }
+  
+} catch(e) {
+  err('fetch/build failed: ' + e.message);
+}
+
+// Mouse drag
+let dragging = false, prevX = 0, prevY = 0, rotY = 0, rotX = 0.3, zoom = 1;
+
+canvas.addEventListener('mousedown', e => { dragging = true; prevX = e.clientX; prevY = e.clientY; });
+window.addEventListener('mouseup', () => { dragging = false; });
+window.addEventListener('mousemove', e => {
+  if (!dragging) return;
+  rotY += (e.clientX - prevX) * 0.01;
+  rotX += (e.clientY - prevY) * 0.01;
+  rotX = Math.max(-1.2, Math.min(1.2, rotX));
+  prevX = e.clientX; prevY = e.clientY;
+});
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  zoom = Math.max(0.3, Math.min(3, zoom - e.deltaY * 0.001));
+}, { passive: false });
+
+function animate() {
+  requestAnimationFrame(animate);
+  const d = 1.0 * zoom;
+  camera.position.x = d * Math.sin(rotY) * Math.cos(rotX);
+  camera.position.y = d * Math.sin(rotX) + 0.15;
+  camera.position.z = d * Math.cos(rotY) * Math.cos(rotX);
+  camera.lookAt(0, 0.15, 0);
+  renderer.render(scene, camera);
+}
+animate();
+log('animation started');
+</script>
+</body></html>
