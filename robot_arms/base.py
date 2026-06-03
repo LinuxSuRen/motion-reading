@@ -153,9 +153,9 @@ class ConfigurableArm(RobotArmBase):
         return RobotJointState(joints=joints, gripper=round(gripper, 2))
 
     def _solve_shoulder(self, v_ua: np.ndarray) -> tuple:
-        elevation = np.degrees(np.arccos(np.clip(v_ua[1], -1.0, 1.0)))
+        elevation = np.degrees(np.arccos(np.clip(-v_ua[1], -1.0, 1.0)))
         azimuth = np.degrees(np.arctan2(v_ua[0], v_ua[2]))
-        return azimuth, max(0.0, elevation), 0.0
+        return azimuth, elevation, 0.0
 
     def _solve_elbow(self, v_ua: np.ndarray, v_la: np.ndarray, arm: dict) -> float:
         elbow = arm.get("elbow")

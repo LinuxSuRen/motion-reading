@@ -1127,6 +1127,14 @@
             <option value="http">HTTP</option>
           </select>
         </div>
+        <div class="control-field">
+          <label class="control-label">Arm</label>
+          <select class="control-select" id="control-arm-select">
+            <option value="right">Right</option>
+            <option value="left">Left</option>
+            <option value="both">Both</option>
+          </select>
+        </div>
         <div class="control-field" id="control-host-field">
           <label class="control-label">Host</label>
           <input type="text" class="control-input" id="control-host-input" value="127.0.0.1" placeholder="127.0.0.1">
@@ -1563,6 +1571,7 @@
   var controlEnableToggle = document.getElementById('control-enable-toggle');
   var controlReconnectBtn = document.getElementById('control-reconnect-btn');
   var controlTypeSelect = document.getElementById('control-type-select');
+  var controlArmSelect = document.getElementById('control-arm-select');
   var controlHostInput = document.getElementById('control-host-input');
   var controlPortInput = document.getElementById('control-port-input');
   var controlUrlInput = document.getElementById('control-url-input');
@@ -1588,6 +1597,7 @@
     var type = controlTypeSelect ? controlTypeSelect.value : 'dummy';
     return {
       type: type,
+      arm: controlArmSelect ? controlArmSelect.value : 'right',
       host: controlHostInput ? controlHostInput.value.trim() || '127.0.0.1' : '127.0.0.1',
       port: controlPortInput ? parseInt(controlPortInput.value) || 30002 : 30002,
       url: controlUrlInput ? controlUrlInput.value.trim() || 'http://192.168.1.65:5173/v1/viewer/joints' : '',
@@ -1639,6 +1649,7 @@
         ws.send(JSON.stringify({
           action: 'control_configure',
           type: cfg.type,
+          arm: cfg.arm,
           host: cfg.host,
           port: cfg.port,
           url: cfg.url,

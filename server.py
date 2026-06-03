@@ -155,12 +155,14 @@ async def websocket_endpoint(websocket: WebSocket):
 
     robot = websocket.app.state.robot
     controller = websocket.app.state.controller
+    arm_side = os.getenv("CONTROL_ARM_SIDE", "right")
 
     def _send_to_controller(robot_angles: dict | None):
         if not robot_angles or not controller.enabled:
             return
-        for side in ("left", "right"):
-            side_data = robot_angles.get(side)
+        sides = ("left", "right") if arm_side == "both" else (arm_side,)
+        for s in sides:
+            side_data = robot_angles.get(s)
             if side_data and side_data.get("joints"):
                 controller.send_joints(side_data["joints"], side_data.get("gripper", 0))
 
@@ -221,12 +223,13 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 elif action == "control_configure":
                     ctrl_type = msg.get("type", "dummy")
+                    arm_side = msg.get("arm", "right")
                     host = msg.get("host", "127.0.0.1")
                     port = int(msg.get("port", 30002))
                     url = msg.get("url", "")
                     logger.info(
-                        "Reconfiguring controller: type=%s host=%s port=%d",
-                        ctrl_type, host, port,
+                        "Reconfiguring controller: type=%s host=%s port=%d arm=%s",
+                        ctrl_type, host, port, arm_side,
                     )
                     controller.disconnect()
                     kwargs = {}

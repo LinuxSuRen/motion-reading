@@ -1,5 +1,6 @@
 import json
 import logging
+import math
 from typing import Dict, Optional
 from urllib import request as urllib_request
 from urllib.error import URLError
@@ -57,7 +58,7 @@ class HTTPController(RobotControllerBase):
         mapped = {}
         for k, v in smoothed.items():
             mapped_key = self._joint_mapping.get(k, k)
-            mapped[mapped_key] = round(float(v), 4)
+            mapped[mapped_key] = round(math.radians(float(v)), 4)
         mapped["gripper"] = round(float(gripper), 4)
 
         try:
