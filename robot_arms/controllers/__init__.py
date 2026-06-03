@@ -5,12 +5,14 @@ from typing import Dict, Optional, Type
 from .base import ControllerState, ControllerStatus, RobotControllerBase
 from .dummy import DummyController
 from .tcp import TCPController
+from .http_controller import HTTPController
 
 logger = logging.getLogger(__name__)
 
 _controller_registry: Dict[str, Type[RobotControllerBase]] = {
     "dummy": DummyController,
     "tcp": TCPController,
+    "http": HTTPController,
 }
 
 
@@ -36,6 +38,12 @@ def create_controller(
     if controller_type == "tcp":
         kwargs.setdefault("host", os.getenv("ROBOT_HOST", "127.0.0.1"))
         kwargs.setdefault("port", int(os.getenv("ROBOT_PORT", "30002")))
+
+    if controller_type == "http":
+        kwargs.setdefault("url", os.getenv("ROBOT_HTTP_URL", "http://192.168.1.65:5173/v1/viewer/joints"))
+        kwargs.setdefault("smoother_alpha", float(os.getenv("SMOOTHER_ALPHA", "0.3")))
+        kwargs.setdefault("smoother_threshold", float(os.getenv("SMOOTHER_THRESHOLD", "0.02")))
+        kwargs.setdefault("smoother_interval", float(os.getenv("SMOOTHER_INTERVAL", "0.05")))
 
     return cls(robot_id=robot_id, robot_name=robot_name, **kwargs)
 

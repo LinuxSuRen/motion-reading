@@ -223,17 +223,22 @@ async def websocket_endpoint(websocket: WebSocket):
                     ctrl_type = msg.get("type", "dummy")
                     host = msg.get("host", "127.0.0.1")
                     port = int(msg.get("port", 30002))
+                    url = msg.get("url", "")
                     logger.info(
                         "Reconfiguring controller: type=%s host=%s port=%d",
                         ctrl_type, host, port,
                     )
                     controller.disconnect()
+                    kwargs = {}
+                    if ctrl_type == "tcp":
+                        kwargs.update(host=host, port=port)
+                    elif ctrl_type == "http":
+                        kwargs["url"] = url or os.getenv("ROBOT_HTTP_URL", "http://192.168.1.65:5173/v1/viewer/joints")
                     controller = create_controller(
                         controller_type=ctrl_type,
                         robot_id=robot.robot_id,
                         robot_name=robot.name,
-                        host=host,
-                        port=port,
+                        **kwargs,
                     )
                     websocket.app.state.controller = controller
                     connected = controller.connect()
