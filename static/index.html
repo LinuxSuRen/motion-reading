@@ -938,90 +938,7 @@
   <!-- RIGHT: Angle Data -->
   <section class="data-panel" id="data-panel">
 
-    <!-- Arm Angles -->
-    <div class="section-title">Arm Angles</div>
-    <div class="arm-grid">
-      <div class="arm-column-label">LEFT ARM</div>
-      <div class="arm-column-label">RIGHT ARM</div>
 
-      <div class="arm-card" id="left-arm-card">
-        <div class="angle-row" id="left-elbow-row">
-          <span class="angle-label">Elbow</span>
-          <div class="angle-gauge-container">
-            <svg class="angle-gauge-svg" viewBox="0 0 56 56">
-              <circle class="angle-gauge-track" cx="28" cy="28" r="24"/>
-              <circle class="angle-gauge-fill" id="left-elbow-gauge" cx="28" cy="28" r="24"
-                      stroke-dasharray="150.8" stroke-dashoffset="150.8"
-                      stroke="var(--accent-healthy)"/>
-            </svg>
-          </div>
-          <span class="angle-value-big" id="left-elbow-val">--<span class="angle-value-deg"></span></span>
-        </div>
-        <div class="angle-row" id="left-shoulder-row">
-          <span class="angle-label">Shoulder</span>
-          <div class="angle-gauge-container">
-            <svg class="angle-gauge-svg" viewBox="0 0 56 56">
-              <circle class="angle-gauge-track" cx="28" cy="28" r="24"/>
-              <circle class="angle-gauge-fill" id="left-shoulder-gauge" cx="28" cy="28" r="24"
-                      stroke-dasharray="150.8" stroke-dashoffset="150.8"
-                      stroke="var(--accent-healthy)"/>
-            </svg>
-          </div>
-          <span class="angle-value-big" id="left-shoulder-val">--<span class="angle-value-deg"></span></span>
-        </div>
-        <div class="angle-row" id="left-wrist-row">
-          <span class="angle-label">Wrist</span>
-          <div class="angle-gauge-container">
-            <svg class="angle-gauge-svg" viewBox="0 0 56 56">
-              <circle class="angle-gauge-track" cx="28" cy="28" r="24"/>
-              <circle class="angle-gauge-fill" id="left-wrist-gauge" cx="28" cy="28" r="24"
-                      stroke-dasharray="150.8" stroke-dashoffset="150.8"
-                      stroke="var(--accent-healthy)"/>
-            </svg>
-          </div>
-          <span class="angle-value-big" id="left-wrist-val">--<span class="angle-value-deg"></span></span>
-        </div>
-      </div>
-
-      <div class="arm-card" id="right-arm-card">
-        <div class="angle-row" id="right-elbow-row">
-          <span class="angle-label">Elbow</span>
-          <div class="angle-gauge-container">
-            <svg class="angle-gauge-svg" viewBox="0 0 56 56">
-              <circle class="angle-gauge-track" cx="28" cy="28" r="24"/>
-              <circle class="angle-gauge-fill" id="right-elbow-gauge" cx="28" cy="28" r="24"
-                      stroke-dasharray="150.8" stroke-dashoffset="150.8"
-                      stroke="var(--accent-healthy)"/>
-            </svg>
-          </div>
-          <span class="angle-value-big" id="right-elbow-val">--<span class="angle-value-deg"></span></span>
-        </div>
-        <div class="angle-row" id="right-shoulder-row">
-          <span class="angle-label">Shoulder</span>
-          <div class="angle-gauge-container">
-            <svg class="angle-gauge-svg" viewBox="0 0 56 56">
-              <circle class="angle-gauge-track" cx="28" cy="28" r="24"/>
-              <circle class="angle-gauge-fill" id="right-shoulder-gauge" cx="28" cy="28" r="24"
-                      stroke-dasharray="150.8" stroke-dashoffset="150.8"
-                      stroke="var(--accent-healthy)"/>
-            </svg>
-          </div>
-          <span class="angle-value-big" id="right-shoulder-val">--<span class="angle-value-deg"></span></span>
-        </div>
-        <div class="angle-row" id="right-wrist-row">
-          <span class="angle-label">Wrist</span>
-          <div class="angle-gauge-container">
-            <svg class="angle-gauge-svg" viewBox="0 0 56 56">
-              <circle class="angle-gauge-track" cx="28" cy="28" r="24"/>
-              <circle class="angle-gauge-fill" id="right-wrist-gauge" cx="28" cy="28" r="24"
-                      stroke-dasharray="150.8" stroke-dashoffset="150.8"
-                      stroke="var(--accent-healthy)"/>
-            </svg>
-          </div>
-          <span class="angle-value-big" id="right-wrist-val">--<span class="angle-value-deg"></span></span>
-        </div>
-      </div>
-    </div>
 
 
 
@@ -1202,27 +1119,6 @@
   const CRITICAL = '#ff3b5c';
   const MUTED = '#5a5a7a';
 
-  function getElbowColor(angle) {
-    if (angle === null || angle === undefined) return MUTED;
-    if (angle < 30) return CRITICAL;
-    if (angle <= 60) return BORDERLINE;
-    return HEALTHY;
-  }
-
-  function getShoulderColor(angle) {
-    if (angle === null || angle === undefined) return MUTED;
-    if (angle < 30) return CRITICAL;
-    if (angle <= 80) return BORDERLINE;
-    return HEALTHY;
-  }
-
-  function getWristColor(angle) {
-    if (angle === null || angle === undefined) return MUTED;
-    if (angle < 130) return CRITICAL;
-    if (angle <= 150) return BORDERLINE;
-    return HEALTHY;
-  }
-
   // ────────────────────────────────────────────
   // GAUGE HELPERS
   // ────────────────────────────────────────────
@@ -1253,55 +1149,6 @@
   function formatAngle(val) {
     if (val === null || val === undefined || val === '--') return '--';
     return Number(val).toFixed(1);
-  }
-
-  // ────────────────────────────────────────────
-  // ARM ANGLE ELEMENTS MAP
-  // ────────────────────────────────────────────
-  const armConfig = {
-    left_arm: {
-      elbow: { valEl: 'left-elbow-val', gaugeEl: 'left-elbow-gauge', colorFn: getElbowColor, maxAngle: 180 },
-      shoulder: { valEl: 'left-shoulder-val', gaugeEl: 'left-shoulder-gauge', colorFn: getShoulderColor, maxAngle: 180 },
-      wrist: { valEl: 'left-wrist-val', gaugeEl: 'left-wrist-gauge', colorFn: getWristColor, maxAngle: 180 }
-    },
-    right_arm: {
-      elbow: { valEl: 'right-elbow-val', gaugeEl: 'right-elbow-gauge', colorFn: getElbowColor, maxAngle: 180 },
-      shoulder: { valEl: 'right-shoulder-val', gaugeEl: 'right-shoulder-gauge', colorFn: getShoulderColor, maxAngle: 180 },
-      wrist: { valEl: 'right-wrist-val', gaugeEl: 'right-wrist-gauge', colorFn: getWristColor, maxAngle: 180 }
-    }
-  };
-
-  // ────────────────────────────────────────────
-  // UPDATE ANGLE DISPLAYS
-  // ────────────────────────────────────────────
-  function updateArmAngles(side, data) {
-    const config = armConfig[side];
-    if (!config || !data) return;
-
-    Object.keys(config).forEach(function(joint) {
-      const jointCfg = config[joint];
-      const value = data[joint];
-      const valEl = document.getElementById(jointCfg.valEl);
-      const gaugeEl = document.getElementById(jointCfg.gaugeEl);
-      const color = jointCfg.colorFn(value);
-
-      if (valEl) {
-        valEl.innerHTML = formatAngle(value) +
-          ((value !== null && value !== undefined) ? '<span class="angle-value-deg">&deg;</span>' : '<span class="angle-value-deg"></span>');
-        valEl.style.color = color;
-      }
-
-      if (gaugeEl) {
-        updateGauge(gaugeEl, value, jointCfg.maxAngle, jointCfg.colorFn);
-      }
-    });
-  }
-
-  function updateAllAngles(angles) {
-    if (!angles) return;
-
-    updateArmAngles('left_arm', angles.left_arm);
-    updateArmAngles('right_arm', angles.right_arm);
   }
 
   var ROBOT_JOINT_NAMES = ['j0', 'j1', 'j2', 'j3', 'j4', 'j5', 'j6'];
@@ -1474,58 +1321,6 @@
       const timeStr = new Date().toLocaleTimeString();
       frameTime.textContent = 'Last frame: ' + timeStr;
     }
-  }
-
-  function clearAllDisplays() {
-    ['left', 'right'].forEach(function(side) {
-      ['elbow', 'shoulder', 'wrist'].forEach(function(joint) {
-        var valEl = document.getElementById(side + '-' + joint + '-val');
-        if (valEl) {
-          valEl.innerHTML = '--<span class="angle-value-deg"></span>';
-          valEl.style.color = MUTED;
-        }
-        var gaugeEl = document.getElementById(side + '-' + joint + '-gauge');
-        if (gaugeEl) {
-          gaugeEl.style.strokeDashoffset = '150.8';
-          gaugeEl.style.stroke = MUTED;
-          gaugeEl.style.filter = 'none';
-        }
-      });
-    });
-
-    ['left', 'right'].forEach(function(side) {
-      ROBOT_JOINT_NAMES.forEach(function(name) {
-        var valEl = document.getElementById('robot-' + side + '-' + name + '-val');
-        if (valEl) { valEl.textContent = '--'; valEl.style.color = MUTED; }
-      });
-      var gripFill = document.getElementById('robot-' + side + '-gripper-fill');
-      var gripVal = document.getElementById('robot-' + side + '-gripper-val');
-      if (gripFill) { gripFill.style.width = '0%'; gripFill.style.background = MUTED; }
-      if (gripVal) { gripVal.textContent = '--'; gripVal.style.color = MUTED; }
-    });
-
-    ['mouth', 'smile', 'leye', 'reye', 'lbrow', 'rbrow'].forEach(function(k) {
-      var fill = document.getElementById('face-' + k + '-fill');
-      var val = document.getElementById('face-' + k + '-val');
-      if (fill) { fill.style.width = '0%'; fill.style.background = MUTED; }
-      if (val) { val.textContent = '--'; val.style.color = MUTED; }
-    });
-    ['yaw', 'pitch', 'roll'].forEach(function(k) {
-      var el = document.getElementById('face-' + k);
-      if (el) { el.textContent = '--'; }
-    });
-    var blinkEl = document.getElementById('face-blink');
-    if (blinkEl) blinkEl.textContent = '--';
-
-    // Clear control display
-    if (controlDot) controlDot.className = 'control-status-dot disconnected';
-    if (controlStatusText) {
-      controlStatusText.className = 'control-status-text disconnected';
-      controlStatusText.textContent = 'DISCONNECTED';
-    }
-    if (controlCard) controlCard.className = 'control-card disconnected';
-    if (controlDetail) controlDetail.textContent = '--';
-    if (controlEnableToggle) controlEnableToggle.checked = false;
   }
 
   function updateFaceData(face) {
@@ -1727,12 +1522,9 @@
         }
 
         if (data.angles) {
-          updateAllAngles(data.angles);
           if (data.angles.face) {
             updateFaceData(data.angles.face);
           }
-        } else {
-          clearAllDisplays();
         }
 
         if (data.robot) {
